@@ -11,6 +11,13 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       expect(await repo.getUserByHandle('alice')).toEqual(u)
     })
 
+    test('getUser returns a user by id and undefined for unknown ids', async () => {
+      const repo = await makeRepo()
+      const u = await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
+      expect(await repo.getUser(u.id)).toEqual(u)
+      expect(await repo.getUser('nope')).toBeUndefined()
+    })
+
     test('creates a remote user and lists it among remotes only', async () => {
       const repo = await makeRepo()
       await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
