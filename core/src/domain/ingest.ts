@@ -22,7 +22,7 @@ function fallbackGuid(title: string | null, content: string, rawDate: string): s
   return createHash('sha256').update((title ?? '') + '\0' + content + '\0' + rawDate).digest('hex')
 }
 
-const FETCH_TIMEOUT_MS = 10_000
+export const FETCH_TIMEOUT_MS = 10_000
 const MAX_FEED_BYTES = 5 * 1024 * 1024
 
 // A garbage or unparseable raw date must not throw and kill the whole feed —
@@ -76,10 +76,6 @@ export async function parseFeedWithMeta(body: string): Promise<{ items: ParsedIt
     ? { domain: c.domain, port: c.port, path: c.path, protocol: c.protocol }
     : null
   return { items, discovery: { ...linksToDiscovery(parsed.feed.atom?.links), cloud } }
-}
-
-export async function parseFeed(body: string): Promise<ParsedItem[]> {
-  return (await parseFeedWithMeta(body)).items
 }
 
 export function parseLinkHeader(header: string | null): { hubs: string[]; self: string | null } {

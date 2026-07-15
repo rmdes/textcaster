@@ -12,6 +12,10 @@ export function feedUrls(publicUrl: string, handle: string): { xml: string; json
   return { xml: `${publicUrl}/users/${handle}/feed.xml`, json: `${publicUrl}/users/${handle}/feed.json` }
 }
 
+export function urlPort(u: URL): number {
+  return u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80
+}
+
 export function hubLinkUrl(websub: WebSubMode, publicUrl: string | null): string | null {
   if (websub.mode === 'external') return websub.hubUrl
   if (websub.mode === 'self' && publicUrl) return `${publicUrl}/hub`
@@ -34,7 +38,7 @@ export function renderRssFeed(user: User, posts: Post[], ctx: FeedContext): stri
       const u = new URL(ctx.publicUrl)
       cloud = {
         domain: u.hostname,
-        port: u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80,
+        port: urlPort(u),
         path: '/rsscloud/pleaseNotify',
         registerProcedure: '', // feedsmith omits the empty attribute — expected output
         protocol: 'http-post',

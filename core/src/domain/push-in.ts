@@ -6,8 +6,9 @@ import type { Config } from '../config.ts'
 import type { User, PushSubscription, PushProtocol } from './types.ts'
 import { checkCallbackUrl } from './push-guard.ts'
 import type { LookupFn } from './push-guard.ts'
-import { ingestRemoteUser, parseFeedWithMeta, ingestItems } from './ingest.ts'
+import { ingestRemoteUser, parseFeedWithMeta, ingestItems, FETCH_TIMEOUT_MS } from './ingest.ts'
 import { cloudScheme } from './push.ts'
+import { urlPort } from './feed.ts'
 
 const SIGNATURE_ALGOS = new Set(['sha1', 'sha256', 'sha384', 'sha512'])
 
@@ -42,7 +43,6 @@ export const WEBSUB_LEASE_SECONDS = 864000 // 10 days requested
 export const WEBSUB_RENEW_HORIZON_MS = 86_400_000 // renew when < 1 day left
 export const RSSCLOUD_TTL_MS = 90_000_000 // 25 h
 export const RSSCLOUD_RENEW_HORIZON_MS = 7_200_000 // renew when < 2 h left
-const PUSH_IN_TIMEOUT_MS = 10_000
 
 export function pushInEffective(config: Config): boolean {
   return config.pushIn && config.publicUrl !== null
@@ -92,19 +92,19 @@ export function createPushIn(deps: PushInDeps): PushIn {
         'hub.secret': sub.secret ?? '',
       }).toString(),
       redirect: 'manual', // hub URL came from remote feed content
-      signal: AbortSignal.timeout(PUSH_IN_TIMEOUT_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
   }
 
   async function sendRssCloudRegister(sub: { endpoint: string; topic: string }): Promise<Response> {
     const pub = new URL(config.publicUrl as string)
-    const port = pub.port ? Number(pub.port) : pub.protocol === 'https:' ? 443 : 80
+    const port = urlPort(pub)
     return fetchFn(sub.endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ notifyProcedure: '', port: String(port), path: '/rsscloud/notify', protocol: 'http-post', url1: sub.topic, domain: pub.hostname }).toString(),
       redirect: 'manual',
-      signal: AbortSignal.timeout(PUSH_IN_TIMEOUT_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
   }
 

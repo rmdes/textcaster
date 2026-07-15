@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest'
 import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
-import { ingestRemoteUser, pollAll, parseFeed, parseFeedWithMeta, parseLinkHeader, ingestItems } from '../src/domain/ingest.ts'
+import { ingestRemoteUser, pollAll, parseFeedWithMeta, parseLinkHeader, ingestItems } from '../src/domain/ingest.ts'
 
 const RSS = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
 <item><title>Hello</title><link>https://ex.com/1</link><guid>https://ex.com/1</guid><description>Body one</description><pubDate>Wed, 01 Jan 2026 00:00:00 GMT</pubDate></item>
@@ -205,7 +205,7 @@ test('fallback guids for (ab,c) and (a,bc) do not collide', async () => {
     { title: 'ab', content_text: 'c' },
     { title: 'a', content_text: 'bc' },
   ] })
-  const items = await parseFeed(json)
+  const items = (await parseFeedWithMeta(json)).items
   expect(items[0].guid).not.toBe(items[1].guid)
 })
 
@@ -219,7 +219,7 @@ test('an XML feed mislabeled as JSON still parses as RSS', async () => {
 
 test('a BOM-prefixed JSON Feed served as text/plain parses as JSON Feed', async () => {
   const json = '﻿' + JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [{ id: 'bom1', content_text: 'bom body' }] })
-  const items = await parseFeed(json)
+  const items = (await parseFeedWithMeta(json)).items
   expect(items[0].guid).toBe('bom1')
 })
 

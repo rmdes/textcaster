@@ -3,7 +3,7 @@ import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
-import { parseFeed } from '../src/domain/ingest.ts'
+import { parseFeedWithMeta } from '../src/domain/ingest.ts'
 import type { FeedContext } from '../src/domain/feed.ts'
 
 const CTX: FeedContext = { publicUrl: 'https://cast.example.com', hubUrl: 'https://cast.example.com/hub', rssCloud: true }
@@ -28,7 +28,7 @@ test('RSS feed round-trips through our own parser (Textcasting profile intact)',
   expect(res.status).toBe(200)
   expect(res.headers.get('content-type')).toContain('application/rss+xml')
   const body = await res.text()
-  const items = await parseFeed(body)
+  const items = (await parseFeedWithMeta(body)).items
   expect(items.length).toBe(2)
   expect(items.map((i) => i.content)).toContain('first body')
   expect(items[0].title).toBeNull() // local posts are title-less; never synthesized
@@ -54,7 +54,7 @@ test('JSON Feed round-trips and carries version + hub', async () => {
   expect(res.headers.get('content-type')).toContain('application/feed+json')
   const raw = await res.text()
   expect(raw).toContain('"version": "https://jsonfeed.org/version/1.1"')
-  const items = await parseFeed(raw)
+  const items = (await parseFeedWithMeta(raw)).items
   expect(items.map((i) => i.content)).toContain('second body')
 })
 
