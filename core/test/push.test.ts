@@ -253,3 +253,15 @@ test('renewing an existing rsscloud subscription is not blocked by the per-host 
   // a genuinely new callback on the same host is still capped
   expect((await handleRssCloudRequest(deps, cloudForm({ domain: 'full.example.com', path: '/brand-new' }), null)).status).toBe(429)
 })
+
+test('rsscloud registration whose callback fails the challenge is never stored', async () => {
+  const { repo, service, config } = await setup(CLOUD_ENV)
+  await service.createLocalPostAs('alice', 'Alice', 'seed')
+  const badFetch = vi.fn(async () => new Response('no challenge here', { status: 200 }))
+  const deps = { repo, config, fetchFn: badFetch as unknown as typeof fetch, lookupFn: publicLookup }
+  const r = await handleRssCloudRequest(deps, cloudForm({ domain: 'never-consented.example.com' }), null)
+  expect(r.status).toBe(202) // 202 first; verification decides later
+  await vi.waitFor(() => expect(badFetch).toHaveBeenCalledTimes(1)) // challenge GET happened...
+  await new Promise((res) => setImmediate(res)) // ...and its rejection settled
+  expect(await repo.countActiveSubscriptions({ callbackHost: 'never-consented.example.com' }, '2020-01-01T00:00:00.000Z')).toBe(0)
+})
