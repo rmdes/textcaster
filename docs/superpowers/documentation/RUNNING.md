@@ -48,6 +48,33 @@ There is no `PUBLIC_CORE_SSE_URL` and nothing core-related is marked
 reach the browser through web's own `/stream` route, which proxies core's
 SSE endpoint server-side.
 
+## Feeds & push
+
+Every local user's posts are published as standard feeds:
+
+- `GET /users/<handle>/feed.xml` — RSS 2.0
+- `GET /users/<handle>/feed.json` — JSON Feed 1.1
+
+Another Textcaster instance can add either URL as a remote user — that is
+the federation loop. A remote user's handle redirects (302) to their
+canonical feed instead.
+
+Push is **opt-in** (default: plain feeds, polling only):
+
+| Variable | Values | Meaning |
+|---|---|---|
+| `TEXTCASTER_PUBLIC_URL` | `https://your.host` | Public origin; required for any push mode. |
+| `TEXTCASTER_WEBSUB` | `off` (default) \| `self` \| hub URL | `self` runs a WebSub hub at `POST /hub`; a URL advertises that external hub and pings it on every local post. |
+| `TEXTCASTER_RSSCLOUD` | `off` (default) \| `on` | Adds `<cloud>` to RSS feeds and serves `POST /rsscloud/pleaseNotify` (thin pings). |
+
+Notes:
+- Subscriber callbacks are verified with a challenge and must be public
+  hosts — loopback/private addresses are rejected by design.
+- Behind a reverse proxy, forward `X-Forwarded-For` — the rssCloud
+  no-`domain` registration path needs the requester's address.
+- Delivery is best-effort (one retry). Subscribers that miss a ping catch
+  up on their next poll.
+
 ## Stale DB warning
 
 **Schema changes are now migration-gated.** Core refuses to start against a
