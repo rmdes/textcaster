@@ -40,7 +40,7 @@ export async function ingestRemoteUser(repo: Repository, bus: EventBus, user: Us
   const contentLength = Number(res.headers.get('content-length') ?? '0')
   if (contentLength > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${contentLength} bytes`)
   const body = await res.text()
-  if (body.length > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${body.length} bytes`)
+  if (Buffer.byteLength(body) > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${Buffer.byteLength(body)} bytes`)
   const contentType = res.headers.get('content-type') ?? ''
   const items = await parseFeed(body, contentType)
   let inserted = 0

@@ -17,7 +17,7 @@ const service = createService(repo, bus)
 const app = createApp({ service, bus, token: config.token })
 
 async function loop() {
-  await pollAll(repo, bus)
+  try { await pollAll(repo, bus) } catch (err) { console.error('pollAll failed:', err instanceof Error ? err.message : err) }
   setTimeout(loop, config.pollSeconds * 1000)
 }
 setTimeout(loop, config.pollSeconds * 1000)
