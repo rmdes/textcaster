@@ -47,6 +47,12 @@ export function createService(repo: Repository, bus: EventBus) {
     getTimeline(limit = 100, before?: TimelineCursor) {
       return repo.getTimeline(limit, before)
     },
+    getPost(id: string) {
+      return repo.getPost(id)
+    },
+    getTimelineAfter(sinceCreatedAt: string, limit: number) {
+      return repo.getTimelineAfter(sinceCreatedAt, limit)
+    },
   }
 }
 

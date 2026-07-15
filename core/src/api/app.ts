@@ -29,6 +29,8 @@ async function readJsonBody(c: Context): Promise<Record<string, unknown> | null>
   }
 }
 
+const REPLAY_CAP = 100
+
 export function createApp(deps: { service: Service; bus: EventBus; token: string }): Hono {
   const { service, bus, token } = deps
   const app = new Hono()
@@ -88,8 +90,26 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
 
   app.get('/timeline/stream', (c) =>
     streamSSE(c, async (stream) => {
+      // Subscribe BEFORE replay (spec H2): a post landing between the replay
+      // query and the subscription must not be lost. Double-delivery is fine —
+      // clients dedup by id.
       const off = bus.onNewPost((entry) => { void stream.writeSSE({ event: 'post', id: entry.id, data: JSON.stringify(entry) }) })
       stream.onAbort(off)
+      const lastEventId = c.req.header('Last-Event-ID')
+      if (lastEventId) {
+        const anchorPost = await service.getPost(lastEventId)
+        if (anchorPost) {
+          // Inclusive scan (spec R1): the anchor and its same-created_at batch
+          // re-deliver in full; the cap count includes the anchor row.
+          const missed = await service.getTimelineAfter(anchorPost.createdAt, REPLAY_CAP + 1)
+          if (missed.length <= REPLAY_CAP) {
+            for (const entry of missed) {
+              await stream.writeSSE({ event: 'post', id: entry.id, data: JSON.stringify(entry) })
+            }
+          }
+          // else: too stale for patch-up — skip replay entirely; SSR is the recovery path (spec H4).
+        }
+      }
       while (!stream.aborted) { await stream.sleep(15000); await stream.writeSSE({ event: 'ping', data: '' }) }
     }),
   )
