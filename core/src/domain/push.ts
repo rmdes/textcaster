@@ -27,6 +27,12 @@ export const RSSCLOUD_LEASE_SECONDS = 90000 // 25 hours; subscribers re-register
 
 export interface RegistrationResult { status: 202 | 400 | 404 | 429; error?: string }
 
+// <cloud> carries no scheme; by convention port 443 means the origin is
+// https (both sides derive the advertised port from their PUBLIC_URL).
+export function cloudScheme(port: number): 'http' | 'https' {
+  return port === 443 ? 'https' : 'http'
+}
+
 // H3: exact string equality against the re-minted URL of an existing LOCAL user.
 export async function resolveLocalTopic(repo: Repository, publicUrl: string, topic: string): Promise<{ user: User; format: 'xml' | 'json' } | null> {
   const m = /^.*\/users\/([a-z0-9-]{1,64})\/feed\.(xml|json)$/.exec(topic)
@@ -111,7 +117,7 @@ export async function handleRssCloudRequest(deps: PushDeps & { lookupFn?: Lookup
   if (!path.startsWith('/')) return { status: 400, error: 'path invalid' }
   const host = form.domain || requesterIp
   if (!host) return { status: 400, error: 'no domain and no requester address' }
-  const callback = `http://${host}:${port}${path}`
+  const callback = `${cloudScheme(port)}://${host}:${port}${path}`
   const gate = await checkCallbackUrl(callback, deps.lookupFn)
   if (!gate.ok) return { status: 400, error: gate.reason }
   const now = new Date().toISOString()

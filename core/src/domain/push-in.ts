@@ -7,6 +7,7 @@ import type { User, PushSubscription, PushProtocol } from './types.ts'
 import { checkCallbackUrl } from './push-guard.ts'
 import type { LookupFn } from './push-guard.ts'
 import { ingestRemoteUser, parseFeedWithMeta, ingestItems } from './ingest.ts'
+import { cloudScheme } from './push.ts'
 
 const SIGNATURE_ALGOS = new Set(['sha1', 'sha256', 'sha384', 'sha512'])
 
@@ -31,7 +32,7 @@ export function choosePushTarget(discovery: FeedDiscovery, feedUrl: string): Pus
   }
   if (discovery.cloud && discovery.cloud.protocol === 'http-post') {
     const { domain, port, path } = discovery.cloud
-    return { mode: 'rsscloud', endpoint: `http://${domain}:${port}${path}`, topic: feedUrl }
+    return { mode: 'rsscloud', endpoint: `${cloudScheme(port)}://${domain}:${port}${path}`, topic: feedUrl }
   }
   return null
 }
@@ -126,15 +127,18 @@ export function createPushIn(deps: PushInDeps): PushIn {
       await sendWebSubSubscribe({ userId: user.id, endpoint: target.endpoint, topic: target.topic, token, secret })
       // Row flips to active when the hub's verification GET arrives (Task 6).
     } else {
+      // Row BEFORE register (mirrors websub): the publisher's challenge GET
+      // arrives while the register POST is still in flight and must find it.
+      const row = {
+        id: existing?.id ?? crypto.randomUUID(),
+        userId: user.id, mode: 'rsscloud' as const, endpoint: target.endpoint, topic: target.topic,
+        callbackToken: token, secret: null,
+        createdAt: existing?.createdAt ?? new Date(now).toISOString(),
+      }
+      await repo.upsertPushSubscription({ ...row, state: 'pending', expiresAt: new Date(now + PENDING_TTL_MS).toISOString() })
       const res = await sendRssCloudRegister({ endpoint: target.endpoint, topic: target.topic })
       if (res.ok) {
-        await repo.upsertPushSubscription({
-          id: existing?.id ?? crypto.randomUUID(),
-          userId: user.id, mode: 'rsscloud', endpoint: target.endpoint, topic: target.topic,
-          callbackToken: token, secret: null, state: 'active',
-          expiresAt: new Date(now + RSSCLOUD_TTL_MS).toISOString(),
-          createdAt: existing?.createdAt ?? new Date(now).toISOString(),
-        })
+        await repo.upsertPushSubscription({ ...row, state: 'active', expiresAt: new Date(now + RSSCLOUD_TTL_MS).toISOString() })
       }
     }
   }

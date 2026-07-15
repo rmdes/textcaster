@@ -23,6 +23,12 @@ test('choosePushTarget falls back to an http-post cloud, and yields null otherwi
   expect(choosePushTarget({ hubs: [], self: null, cloud: null }, FEED)).toBeNull()
 })
 
+test('cloud endpoints derive scheme from port: 443 is https, others http', () => {
+  const cloud = (port: number) => ({ domain: 'a.example', port, path: '/rsscloud/pleaseNotify', protocol: 'http-post' })
+  expect(choosePushTarget({ hubs: [], self: null, cloud: cloud(443) }, 'https://a.example/users/x/feed.xml')?.endpoint).toBe('https://a.example:443/rsscloud/pleaseNotify')
+  expect(choosePushTarget({ hubs: [], self: null, cloud: cloud(5337) }, 'https://a.example/users/x/feed.xml')?.endpoint).toBe('http://a.example:5337/rsscloud/pleaseNotify')
+})
+
 const PUSHIN_ENV = { TEXTCASTER_TOKEN: 't', TEXTCASTER_PUBLIC_URL: 'https://b.example.com' }
 const publicLookup = async () => [{ address: '93.184.216.34' }]
 const HUB_DISCOVERY = { hubs: ['https://hub.example.com/hub'], self: 'https://blog.example.com/feed.xml', cloud: null }
@@ -105,6 +111,21 @@ test('rsscloud registration marks active on 2xx with 25h expiry', async () => {
   expect(calls[0].get('url1')).toBe('https://cloudy.example.com/rss.xml')
   expect(calls[0].get('path')).toBe('/rsscloud/notify')
   expect(calls[0].get('domain')).toBe('b.example.com')
+})
+
+test('rsscloud row exists BEFORE the register POST resolves, so the in-flight challenge finds it', async () => {
+  const { repo, config } = await pushInSetup()
+  const user = await repo.createRemoteUser({ handle: 'cloudy', displayName: 'C', feedUrl: 'https://cloudy.example.com/rss.xml' })
+  let challenged: { status: number; body: string } | null = null
+  const fetchFn = vi.fn(async () => {
+    // Publisher's challenge GET arrives while the register POST is still in flight.
+    challenged = await pushIn.handleRssCloudChallenge('https://cloudy.example.com/rss.xml', 'chal')
+    return new Response('', { status: 200 })
+  })
+  const pushIn = createPushIn({ repo, config, fetchFn: fetchFn as unknown as typeof fetch, lookupFn: publicLookup })
+  await pushIn.maybeSubscribe(user, { hubs: [], self: null, cloud: { domain: 'cloudy.example.com', port: 5337, path: '/rsscloud/pleaseNotify', protocol: 'http-post' } })
+  expect(challenged).toEqual({ status: 200, body: 'confirming chal' })
+  expect((await repo.findPushSubscription({ userId: user.id, mode: 'rsscloud' }))?.state).toBe('active')
 })
 
 test('renewDue re-subscribes websub near lease end and re-registers rsscloud near expiry', async () => {
