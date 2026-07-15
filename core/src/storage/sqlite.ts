@@ -2,7 +2,7 @@ import { Kysely, SqliteDialect } from 'kysely'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import type { Repository } from '../domain/repository.ts'
-import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry } from '../domain/types.ts'
+import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry, TimelineCursor } from '../domain/types.ts'
 
 interface UsersTable { id: string; kind: 'local' | 'remote'; handle: string; display_name: string; feed_url: string | null; created_at: string }
 interface PostsTable { id: string; author_id: string; source: 'local' | 'remote'; guid: string; title: string | null; content: string; url: string | null; published_at: string; created_at: string }
@@ -10,6 +10,19 @@ interface DB { users: UsersTable; posts: PostsTable }
 
 function rowToUser(r: UsersTable): User {
   return { id: r.id, kind: r.kind, handle: r.handle, displayName: r.display_name, feedUrl: r.feed_url, createdAt: r.created_at }
+}
+
+function rowToPost(r: PostsTable): Post {
+  return { id: r.id, authorId: r.author_id, source: r.source, guid: r.guid, title: r.title, content: r.content, url: r.url, publishedAt: r.published_at, createdAt: r.created_at }
+}
+
+type JoinedRow = PostsTable & { u_id: string; u_kind: 'local' | 'remote'; u_handle: string; u_display_name: string; u_feed_url: string | null; u_created_at: string }
+
+function joinedRowToEntry(r: JoinedRow): TimelineEntry {
+  return {
+    ...rowToPost(r),
+    author: { id: r.u_id, kind: r.u_kind, handle: r.u_handle, displayName: r.u_display_name, feedUrl: r.u_feed_url, createdAt: r.u_created_at },
+  }
 }
 
 export class SqliteRepository implements Repository {
@@ -49,8 +62,8 @@ export class SqliteRepository implements Repository {
     const r = await this.db.selectFrom('posts').select('id').where('author_id', '=', authorId).executeTakeFirst()
     return r !== undefined
   }
-  async getTimeline(limit: number): Promise<TimelineEntry[]> {
-    const rows = await this.db
+  async getTimeline(limit: number, before?: TimelineCursor): Promise<TimelineEntry[]> {
+    let q = this.db
       .selectFrom('posts')
       .innerJoin('users', 'users.id', 'posts.author_id')
       .selectAll('posts')
@@ -58,11 +71,30 @@ export class SqliteRepository implements Repository {
       .orderBy('posts.published_at', 'desc')
       .orderBy('posts.id', 'desc')
       .limit(limit)
+    if (before) {
+      q = q.where((eb) => eb(eb.refTuple('posts.published_at', 'posts.id'), '<', eb.tuple(before.publishedAt, before.id)))
+    }
+    const rows = await q.execute()
+    return rows.map(joinedRowToEntry)
+  }
+
+  async getTimelineAfter(sinceCreatedAt: string, limit: number): Promise<TimelineEntry[]> {
+    const rows = await this.db
+      .selectFrom('posts')
+      .innerJoin('users', 'users.id', 'posts.author_id')
+      .selectAll('posts')
+      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at'])
+      .where('posts.created_at', '>=', sinceCreatedAt)
+      .orderBy('posts.created_at', 'asc')
+      .orderBy('posts.id', 'asc')
+      .limit(limit)
       .execute()
-    return rows.map((r) => ({
-      id: r.id, authorId: r.author_id, source: r.source, guid: r.guid, title: r.title, content: r.content, url: r.url, publishedAt: r.published_at, createdAt: r.created_at,
-      author: { id: r.u_id, kind: r.u_kind, handle: r.u_handle, displayName: r.u_display_name, feedUrl: r.u_feed_url, createdAt: r.u_created_at },
-    }))
+    return rows.map(joinedRowToEntry)
+  }
+
+  async getPost(id: string): Promise<Post | undefined> {
+    const r = await this.db.selectFrom('posts').selectAll().where('id', '=', id).executeTakeFirst()
+    return r ? rowToPost(r) : undefined
   }
 }
 

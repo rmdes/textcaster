@@ -1,4 +1,4 @@
-import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry } from './types.ts'
+import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry, TimelineCursor } from './types.ts'
 
 export interface Repository {
   createLocalUser(u: NewLocalUser): Promise<User>
@@ -8,5 +8,9 @@ export interface Repository {
   listRemoteUsers(): Promise<User[]>
   insertPost(p: Post): Promise<boolean>
   hasPostsByAuthor(authorId: string): Promise<boolean>
-  getTimeline(limit: number): Promise<TimelineEntry[]>
+  getTimeline(limit: number, before?: TimelineCursor): Promise<TimelineEntry[]>
+  /** Arrival-order replay scan: created_at >= sinceCreatedAt, ASC. Inclusive by
+   *  design (same-ms batches re-deliver in full); consumers dedup by id. */
+  getTimelineAfter(sinceCreatedAt: string, limit: number): Promise<TimelineEntry[]>
+  getPost(id: string): Promise<Post | undefined>
 }
