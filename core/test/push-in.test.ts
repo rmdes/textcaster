@@ -164,10 +164,13 @@ test('websub verification GET is state-agnostic, flips to active with granted le
   const row = await repo.findPushSubscription({ token: 'tok-v' })
   expect(row?.state).toBe('active')
   expect(Date.parse(row!.expiresAt)).toBeGreaterThan(Date.now() + 4 * 86400 * 1000)
+  const firstExpiresAt = row!.expiresAt
 
-  // re-verification while ACTIVE (renewal) still echoes — state-agnostic
-  const again = await pushIn.handleWebSubVerification('tok-v', { 'hub.mode': 'subscribe', 'hub.topic': 'https://blog.example.com/feed.xml', 'hub.challenge': 'chal-456', 'hub.lease_seconds': '432000' })
+  // re-verification while ACTIVE (renewal) still echoes — state-agnostic; renewal with larger lease bumps expiry
+  const again = await pushIn.handleWebSubVerification('tok-v', { 'hub.mode': 'subscribe', 'hub.topic': 'https://blog.example.com/feed.xml', 'hub.challenge': 'chal-456', 'hub.lease_seconds': '864000' })
   expect(again.status).toBe(200)
+  const newRow = await repo.findPushSubscription({ token: 'tok-v' })
+  expect(Date.parse(newRow!.expiresAt)).toBeGreaterThan(Date.parse(firstExpiresAt))
 
   expect((await pushIn.handleWebSubVerification('tok-v', { 'hub.mode': 'subscribe', 'hub.topic': 'https://WRONG.example.com/x', 'hub.challenge': 'c' })).status).toBe(404)
   expect((await pushIn.handleWebSubVerification('unknown', { 'hub.mode': 'subscribe', 'hub.topic': 'https://blog.example.com/feed.xml', 'hub.challenge': 'c' })).status).toBe(404)

@@ -1,4 +1,4 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
@@ -140,4 +140,20 @@ test('websub callback routes are 404 when pushInApi is not wired', async () => {
   const app = await makeApp()
   expect((await app.request('/websub/callback/some-token?hub.mode=subscribe')).status).toBe(404)
   expect((await app.request('/websub/callback/some-token', { method: 'POST', body: 'x' })).status).toBe(404)
+})
+
+test('fat-ping route enforces the 5MB body cap before delivery', async () => {
+  const deliver = vi.fn(async () => 202)
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const service = createService(repo, bus)
+  const app = createApp({ service, bus, token: 'secret', pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: deliver } })
+  // content-length pre-check path
+  const lying = await app.request('/websub/callback/tok', { method: 'POST', headers: { 'content-length': String(10 * 1024 * 1024) }, body: 'small' })
+  expect(lying.status).toBe(413)
+  // post-read actual-size path (no content-length header large body)
+  const big = 'x'.repeat(5 * 1024 * 1024 + 1)
+  const res = await app.request('/websub/callback/tok', { method: 'POST', body: big })
+  expect(res.status).toBe(413)
+  expect(deliver).not.toHaveBeenCalled()
 })
