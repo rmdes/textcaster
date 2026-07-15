@@ -6,6 +6,20 @@
 
 <h1>Textcaster</h1>
 
+<form method="POST" action="?/compose" class="composer">
+	<input name="handle" placeholder="your handle" required />
+	<input name="displayName" placeholder="display name (optional)" />
+	<textarea name="content" placeholder="what's happening?" required></textarea>
+	<button>Post</button>
+</form>
+
+<form method="POST" action="?/addRemote" class="add-remote">
+	<input name="handle" placeholder="remote handle" required />
+	<input name="displayName" placeholder="display name (optional)" />
+	<input name="feedUrl" type="url" placeholder="https://their-site.com/feed.xml" required />
+	<button>Add remote user</button>
+</form>
+
 <ul class="timeline">
 	{#each data.timeline as post (post.id)}
 		<li class="post" class:remote={post.source === 'remote'}>
