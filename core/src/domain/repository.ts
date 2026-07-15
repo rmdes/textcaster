@@ -13,6 +13,7 @@ export interface Repository {
    *  design (same-ms batches re-deliver in full); consumers dedup by id. */
   getTimelineAfter(sinceCreatedAt: string, limit: number): Promise<TimelineEntry[]>
   getPost(id: string): Promise<Post | undefined>
+  getPostsByAuthor(authorId: string, limit: number): Promise<Post[]>
   upsertSubscription(s: Subscription): Promise<void>
   deleteSubscription(protocol: PushProtocol, topic: string, callback: string): Promise<void>
   listActiveSubscriptions(topic: string, now: string): Promise<Subscription[]>

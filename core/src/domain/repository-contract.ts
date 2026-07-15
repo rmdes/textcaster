@@ -177,5 +177,17 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       await repo.purgeExpiredSubscriptions('2026-06-01T00:00:00.000Z')
       expect(await repo.countActiveSubscriptions({ callbackHost: 'cb.example.com' }, '2020-01-01T00:00:00.000Z')).toBe(1)
     })
+
+    test('getPostsByAuthor returns only that author, display-ordered, limited', async () => {
+      const repo = await makeRepo()
+      const a = await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
+      const b = await repo.createLocalUser({ handle: 'bob', displayName: 'Bob' })
+      for (let i = 1; i <= 3; i++) {
+        await repo.insertPost({ id: `a${i}`, authorId: a.id, source: 'local', guid: `ga${i}`, title: null, content: `alice ${i}`, url: null, publishedAt: `2026-01-0${i}T00:00:00.000Z`, createdAt: `2026-01-0${i}T00:00:00.000Z` })
+      }
+      await repo.insertPost({ id: 'b1', authorId: b.id, source: 'local', guid: 'gb1', title: null, content: 'bob 1', url: null, publishedAt: '2026-01-09T00:00:00.000Z', createdAt: '2026-01-09T00:00:00.000Z' })
+      const posts = await repo.getPostsByAuthor(a.id, 2)
+      expect(posts.map((p) => p.id)).toEqual(['a3', 'a2'])
+    })
   })
 }
