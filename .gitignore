@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# builds / output
+dist/
+build/
+.svelte-kit/
+.output/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# databases (SQLite default backend)
+*.sqlite
+*.sqlite3
+*.db
+data/
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# scratch
+.superpowers/
