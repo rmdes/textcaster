@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import Parser from 'rss-parser'
 import type { Repository } from './repository.ts'
 import type { EventBus } from './bus.ts'
@@ -7,6 +7,10 @@ import type { User, Post } from './types.ts'
 export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string }
 
 const rss = new Parser()
+
+function fallbackGuid(title: string | null, content: string, publishedAt: string): string {
+  return createHash('sha256').update((title ?? '') + content + publishedAt).digest('hex')
+}
 
 const FETCH_TIMEOUT_MS = 10_000
 const MAX_FEED_BYTES = 5 * 1024 * 1024
@@ -19,18 +23,18 @@ export async function parseFeed(body: string, contentType: string): Promise<Pars
       const title = typeof it.title === 'string' ? it.title : null
       const text = typeof it.content_text === 'string' ? it.content_text : typeof it.content_html === 'string' ? it.content_html : ''
       const url = typeof it.url === 'string' ? it.url : null
-      const guid = typeof it.id === 'string' ? it.id : url ?? randomUUID()
       const date = typeof it.date_published === 'string' ? new Date(it.date_published).toISOString() : now
+      const guid = typeof it.id === 'string' ? it.id : url ?? fallbackGuid(title, text, date)
       return { guid, title, content: text, url, publishedAt: date }
     })
   }
   const feed = await rss.parseString(body)
   return (feed.items ?? []).map((it) => {
     const url = it.link ?? null
-    const guid = it.guid ?? url ?? randomUUID()
     const title = it.title ?? null
     const text = it.contentSnippet ?? it.content ?? ''
     const date = it.isoDate ? new Date(it.isoDate).toISOString() : now
+    const guid = it.guid ?? url ?? fallbackGuid(title, text, date)
     return { guid, title, content: text, url, publishedAt: date }
   })
 }

@@ -85,6 +85,21 @@ test('an item dated in the future is clamped to now', async () => {
   expect(new Date(tl[0].publishedAt).getTime()).toBeLessThanOrEqual(Date.now())
 })
 
+test('an item with no guid and no link gets a deterministic fallback guid, so re-ingesting inserts 0 new posts', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'nolink', displayName: 'NoLink', feedUrl: 'https://ex.com/f.xml' })
+  const noGuidNoLinkRss = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
+<item><title>Untitled Item</title><description>Body text</description><pubDate>Wed, 01 Jan 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>`
+
+  const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkRss, 'application/rss+xml'))
+  expect(n1).toBe(1)
+
+  const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkRss, 'application/rss+xml'))
+  expect(n2).toBe(0)
+})
+
 function fakeFetchOversized() {
   return async () => new Response(RSS, { headers: { 'content-type': 'application/rss+xml', 'content-length': String(10 * 1024 * 1024) } })
 }
