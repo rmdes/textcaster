@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { Repository } from './repository.ts'
 import type { EventBus } from './bus.ts'
+import { DomainError } from './types.ts'
 import type { NewRemoteUser, TimelineEntry, User, Post } from './types.ts'
 
 export function createService(repo: Repository, bus: EventBus) {
   async function ensureLocalUser(handle: string, displayName: string): Promise<User> {
     const existing = await repo.getUserByHandle(handle)
     if (existing) {
-      if (existing.kind !== 'local') throw new Error('handle belongs to a remote user')
+      if (existing.kind !== 'local') throw new DomainError('handle belongs to a remote user')
       return existing
     }
     return repo.createLocalUser({ handle, displayName })

@@ -1,3 +1,5 @@
+export class DomainError extends Error {}
+
 export type UserKind = 'local' | 'remote'
 export type PostSource = 'local' | 'remote'
 

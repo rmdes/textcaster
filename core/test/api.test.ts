@@ -28,7 +28,15 @@ test('POST /posts then GET /timeline shows the post', async () => {
 
 test('POST /users adds a remote user', async () => {
   const app = await makeApp()
-  const res = await app.request('/users', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' }) })
+  const res = await app.request('/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' }) })
   expect(res.status).toBe(201)
   expect((await res.json()).user.kind).toBe('remote')
+})
+
+test('POST /posts with a handle belonging to a remote user returns 400 with a JSON error', async () => {
+  const app = await makeApp()
+  await app.request('/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' }) })
+  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'news', displayName: 'News', content: 'hi' }) })
+  expect(res.status).toBe(400)
+  expect((await res.json()).error).toBe('handle belongs to a remote user')
 })

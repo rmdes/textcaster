@@ -1,12 +1,19 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { bearerAuth } from './auth.ts'
+import { DomainError } from '../domain/types.ts'
 import type { Service } from '../domain/service.ts'
 import type { EventBus } from '../domain/bus.ts'
 
 export function createApp(deps: { service: Service; bus: EventBus; token: string }): Hono {
   const { service, bus, token } = deps
   const app = new Hono()
+
+  app.onError((err, c) => {
+    if (err instanceof DomainError) return c.json({ error: err.message }, 400)
+    console.error(err)
+    return c.json({ error: 'internal error' }, 500)
+  })
 
   app.get('/health', (c) => c.json({ ok: true }))
 
