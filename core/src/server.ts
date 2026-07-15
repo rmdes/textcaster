@@ -6,6 +6,8 @@ import { createSqliteRepository } from './storage/sqlite.ts'
 import { createEventBus } from './domain/bus.ts'
 import { createService } from './domain/service.ts'
 import { createApp } from './api/app.ts'
+import { hubLinkUrl } from './domain/feed.ts'
+import { createPush } from './domain/push.ts'
 import { pollAll } from './domain/ingest.ts'
 
 const config = loadConfig()
@@ -14,10 +16,24 @@ if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive:
 const repo = await createSqliteRepository(config.dbPath)
 const bus = createEventBus()
 const service = createService(repo, bus)
-const app = createApp({ service, bus, token: config.token })
+const push = createPush({ repo, config })
+const app = createApp({
+  service,
+  bus,
+  token: config.token,
+  feeds: { publicUrl: config.publicUrl, hubUrl: hubLinkUrl(config.websub, config.publicUrl), rssCloud: config.rssCloud },
+})
+
+// H4 seam: onLocalPost never rejects; void is safe here by contract.
+bus.onNewPost((e) => { void push.onLocalPost(e) })
 
 async function loop() {
-  try { await pollAll(repo, bus) } catch (err) { console.error('pollAll failed:', err instanceof Error ? err.message : err) }
+  try {
+    await pollAll(repo, bus)
+    await repo.purgeExpiredSubscriptions(new Date().toISOString())
+  } catch (err) {
+    console.error('pollAll failed:', err instanceof Error ? err.message : err)
+  }
   setTimeout(loop, config.pollSeconds * 1000)
 }
 setTimeout(loop, config.pollSeconds * 1000)
