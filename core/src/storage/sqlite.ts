@@ -39,6 +39,8 @@ export class SqliteRepository implements Repository {
     const [result] = await this.db
       .insertInto('posts')
       .values({ id: p.id, author_id: p.authorId, source: p.source, guid: p.guid, title: p.title, content: p.content, url: p.url, published_at: p.publishedAt, created_at: p.createdAt })
+      // Relies on posts_author_guid_uq being the ONLY unique constraint on posts;
+      // a future second unique constraint would need an explicit conflict target.
       .onConflict((oc) => oc.doNothing())
       .execute()
     return (result?.numInsertedOrUpdatedRows ?? 0n) > 0n

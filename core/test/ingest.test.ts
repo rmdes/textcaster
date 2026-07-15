@@ -125,6 +125,30 @@ test('an item with no guid and no link gets a deterministic fallback guid, so re
   expect(n2).toBe(0)
 })
 
+test('an item with no guid, no link, and no pubDate is not re-inserted on the next poll', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'nodate', displayName: 'NoDate', feedUrl: 'https://ex.com/f.xml' })
+  const noGuidNoLinkNoDateRss = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
+<item><title>Dateless Item</title><description>Body text</description></item>
+</channel></rss>`
+
+  // Force the defaulted "now" to differ between the two polls, so a hash that
+  // (incorrectly) includes it would produce a different guid each time.
+  vi.useFakeTimers()
+  try {
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkNoDateRss, 'application/rss+xml'))
+    expect(n1).toBe(1)
+
+    vi.setSystemTime(new Date('2026-01-01T00:00:05.000Z'))
+    const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkNoDateRss, 'application/rss+xml'))
+    expect(n2).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 test('sniffs JSON Feed body even when served with a non-JSON content-type', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()

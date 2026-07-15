@@ -8,8 +8,12 @@ export interface ParsedItem { guid: string; title: string | null; content: strin
 
 const rss = new Parser()
 
-function fallbackGuid(title: string | null, content: string, publishedAt: string): string {
-  return createHash('sha256').update((title ?? '') + content + publishedAt).digest('hex')
+// Hashes only fields that are stable across polls of the same feed item. The
+// raw date string (as it appeared in the feed, or '' if absent) is used here —
+// never the defaulted "now" — so an item with no date doesn't get a fresh
+// guid, and thus re-insert as a new post, on every poll.
+function fallbackGuid(title: string | null, content: string, rawDate: string): string {
+  return createHash('sha256').update((title ?? '') + content + rawDate).digest('hex')
 }
 
 const FETCH_TIMEOUT_MS = 10_000
@@ -27,8 +31,9 @@ export async function parseFeed(body: string, contentType: string): Promise<Pars
       const title = typeof it.title === 'string' ? it.title : null
       const text = typeof it.content_text === 'string' ? it.content_text : typeof it.content_html === 'string' ? it.content_html : ''
       const url = typeof it.url === 'string' ? it.url : null
-      const date = typeof it.date_published === 'string' ? new Date(it.date_published).toISOString() : now
-      const guid = typeof it.id === 'string' ? it.id : url ?? fallbackGuid(title, text, date)
+      const rawDate = typeof it.date_published === 'string' ? it.date_published : ''
+      const date = rawDate ? new Date(rawDate).toISOString() : now
+      const guid = typeof it.id === 'string' ? it.id : url ?? fallbackGuid(title, text, rawDate)
       return { guid, title, content: text, url, publishedAt: date }
     })
   }
@@ -37,10 +42,11 @@ export async function parseFeed(body: string, contentType: string): Promise<Pars
     const url = it.link ?? null
     const title = it.title ?? null
     const text = it.contentSnippet ?? it.content ?? ''
-    const date = it.isoDate ? new Date(it.isoDate).toISOString() : now
+    const rawDate = it.isoDate ?? ''
+    const date = rawDate ? new Date(rawDate).toISOString() : now
     // RSS <guid> maps to it.guid; Atom's <id> has no RSS equivalent and
     // shows up only as it.id, so it must be checked before falling back to the link.
-    const guid = it.guid ?? (it as { id?: string }).id ?? url ?? fallbackGuid(title, text, date)
+    const guid = it.guid ?? (it as { id?: string }).id ?? url ?? fallbackGuid(title, text, rawDate)
     return { guid, title, content: text, url, publishedAt: date }
   })
 }
