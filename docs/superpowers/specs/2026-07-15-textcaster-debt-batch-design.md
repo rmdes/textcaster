@@ -84,15 +84,24 @@ Repository changes (all pinned by the adapter-neutral contract suite):
 - `getTimeline(limit, before?)` — when `before` (a `publishedAt` cursor)
   is given: `(published_at, id) < (before.publishedAt, before.id)`, same
   display ordering as today.
-- `getTimelineAfter(cursor, limit)` — entries with
-  `(created_at, id) > (cursor.createdAt, cursor.id)`, ordered by arrival
-  (`created_at ASC, id ASC`), capped at `limit`; used only by SSE replay.
+- `getTimelineAfter(sinceCreatedAt, limit)` — entries with
+  `created_at >= sinceCreatedAt` (**inclusive, no id tiebreak** — re-review
+  R1), ordered by arrival (`created_at ASC, id ASC`), capped at `limit`;
+  used only by SSE replay. Rationale: `ingestRemoteUser` stamps `created_at`
+  per item in a tight loop, so one poll cycle produces many same-millisecond
+  timestamps while ids are random UUIDs — an exclusive `(created_at, id)`
+  tiebreak would permanently drop roughly half of a same-ms batch after a
+  mid-burst disconnect. Inclusive scan re-delivers the whole same-ms batch
+  (including the cursor post itself) and the client's id-dedup — already
+  load-bearing per H2 — absorbs the duplicates. A monotonic sequence column
+  would buy nothing extra for more machinery.
 - `getPost(id)` — returns the full `Post` (it carries both timestamps, so
   either cursor kind is derivable); `undefined` for unknown ids.
 
 Contract-suite additions: page 2 starts exactly where page 1 ended;
-`publishedAt` ties split correctly by id; `getTimelineAfter` excludes the
-cursor post itself and returns arrival order even when `publishedAt`
+`publishedAt` ties split correctly by id; `getTimelineAfter` **may include
+the cursor post — consumers dedup by id** — re-delivers a full
+same-`created_at` batch, and returns arrival order even when `publishedAt`
 order differs; unknown replay id → `getPost` returns undefined.
 
 ## 3. API + web surface
@@ -108,11 +117,16 @@ order differs; unknown replay id → `getPost` returns undefined.
   1. **Subscribes to the live bus FIRST** (H2 — a post landing between
      replay query and subscription must not be lost; double-delivery is
      safe because clients dedup by id).
-  2. Then `getPost(id)` → `getTimelineAfter(createdAtCursor, 101)`.
+  2. Then `getPost(id)` → `getTimelineAfter(post.createdAt, 101)`.
   3. **If more than 100 rows come back, skip replay entirely** (H4) —
      the client is too stale for patch-up; the SSR page is the recovery
      path. Otherwise write the missed posts as normal `post` frames
-     **oldest-first in arrival order**.
+     **oldest-first in arrival order** (the cursor post itself may be
+     among them; clients dedup by id).
+  - Accepted display semantic (R2): with subscribe-first, live frames can
+    interleave with replay frames in the island's prepend order until the
+    next refresh. That is the island's existing behavior, not a defect —
+    do NOT add client-side sorting to "fix" it.
   4. Unknown id (DB reset) → skip replay silently and go live.
   - **Backfill interaction (H3), decided: accepted.** A client
     disconnected during someone's first-sync backfill will receive those
@@ -209,8 +223,9 @@ TDD throughout, extending the existing suites:
 - SSE end-to-end tests: connect with `Last-Event-ID` → missed frames
   arrive (oldest-first, arrival order) before live frames; an old-dated
   remote item ingested "during the disconnect" IS replayed (the H1
-  regression case); more than 100 missed → no replay frames, live still
-  works.
+  regression case); a same-`created_at` sibling of the cursor post IS
+  replayed (the R1 regression case); more than 100 missed → no replay
+  frames, live still works.
 - Web: load test for `?before=` passthrough and `isFirstPage`; the
   "Older posts" link renders only when `nextCursor` exists; island only
   on page 1.
