@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest'
 import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
-import { ingestRemoteUser, pollAll, parseFeed } from '../src/domain/ingest.ts'
+import { ingestRemoteUser, pollAll, parseFeed, parseFeedWithMeta, parseLinkHeader, ingestItems } from '../src/domain/ingest.ts'
 
 const RSS = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
 <item><title>Hello</title><link>https://ex.com/1</link><guid>https://ex.com/1</guid><description>Body one</description><pubDate>Wed, 01 Jan 2026 00:00:00 GMT</pubDate></item>
@@ -18,12 +18,12 @@ test('ingests RSS items as remote posts, once (idempotent), and emits new ones',
   const seen = vi.fn()
   bus.onNewPost(seen)
 
-  const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/rss+xml'))
-  expect(n1).toBe(1)
+  const r1 = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/rss+xml'))
+  expect(r1.inserted).toBe(1)
   expect(seen).toHaveBeenCalledTimes(0) // first sync for this author is a silent backfill
 
-  const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/rss+xml'))
-  expect(n2).toBe(0) // dedup by (author, guid)
+  const r2 = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/rss+xml'))
+  expect(r2.inserted).toBe(0) // dedup by (author, guid)
   expect(seen).toHaveBeenCalledTimes(0)
 
   const tl = await repo.getTimeline(10)
@@ -49,8 +49,8 @@ test('parses Atom feed items, taking guid from the Atom id', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const user = await repo.createRemoteUser({ handle: 'atom', displayName: 'Atom', feedUrl: 'https://ex.com/f.atom' })
-  const n = await ingestRemoteUser(repo, bus, user, fakeFetch(ATOM, 'application/atom+xml'))
-  expect(n).toBe(1)
+  const r = await ingestRemoteUser(repo, bus, user, fakeFetch(ATOM, 'application/atom+xml'))
+  expect(r.inserted).toBe(1)
   const tl = await repo.getTimeline(10)
   expect(tl[0].guid).toBe('urn:uuid:atom-1')
   expect(tl[0].title).toBe('Atom Title')
@@ -63,8 +63,8 @@ test('parses JSON Feed items too', async () => {
   const bus = createEventBus()
   const user = await repo.createRemoteUser({ handle: 'jf', displayName: 'JF', feedUrl: 'https://ex.com/f.json' })
   const json = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [{ id: 'a1', url: 'https://ex.com/a1', title: 'JF One', content_text: 'jf body', date_published: '2026-01-01T00:00:00Z' }] })
-  const n = await ingestRemoteUser(repo, bus, user, fakeFetch(json, 'application/feed+json'))
-  expect(n).toBe(1)
+  const r = await ingestRemoteUser(repo, bus, user, fakeFetch(json, 'application/feed+json'))
+  expect(r.inserted).toBe(1)
   const tl = await repo.getTimeline(10)
   expect(tl[0].guid).toBe('a1')
   expect(tl[0].title).toBe('JF One')
@@ -89,12 +89,12 @@ test('first sync of a feed inserts posts but stays silent on the bus; later sync
   const seen = vi.fn()
   bus.onNewPost(seen)
 
-  const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(TWO_ITEM_RSS, 'application/rss+xml'))
-  expect(n1).toBe(2)
+  const r1 = await ingestRemoteUser(repo, bus, user, fakeFetch(TWO_ITEM_RSS, 'application/rss+xml'))
+  expect(r1.inserted).toBe(2)
   expect(seen).toHaveBeenCalledTimes(0)
 
-  const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(THREE_ITEM_RSS, 'application/rss+xml'))
-  expect(n2).toBe(1)
+  const r2 = await ingestRemoteUser(repo, bus, user, fakeFetch(THREE_ITEM_RSS, 'application/rss+xml'))
+  expect(r2.inserted).toBe(1)
   expect(seen).toHaveBeenCalledTimes(1)
 })
 
@@ -118,11 +118,11 @@ test('an item with no guid and no link gets a deterministic fallback guid, so re
 <item><title>Untitled Item</title><description>Body text</description><pubDate>Wed, 01 Jan 2026 00:00:00 GMT</pubDate></item>
 </channel></rss>`
 
-  const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkRss, 'application/rss+xml'))
-  expect(n1).toBe(1)
+  const r1 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkRss, 'application/rss+xml'))
+  expect(r1.inserted).toBe(1)
 
-  const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkRss, 'application/rss+xml'))
-  expect(n2).toBe(0)
+  const r2 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkRss, 'application/rss+xml'))
+  expect(r2.inserted).toBe(0)
 })
 
 test('an item with no guid, no link, and no pubDate is not re-inserted on the next poll', async () => {
@@ -138,12 +138,12 @@ test('an item with no guid, no link, and no pubDate is not re-inserted on the ne
   vi.useFakeTimers()
   try {
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
-    const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkNoDateRss, 'application/rss+xml'))
-    expect(n1).toBe(1)
+    const r1 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkNoDateRss, 'application/rss+xml'))
+    expect(r1.inserted).toBe(1)
 
     vi.setSystemTime(new Date('2026-01-01T00:00:05.000Z'))
-    const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkNoDateRss, 'application/rss+xml'))
-    expect(n2).toBe(0)
+    const r2 = await ingestRemoteUser(repo, bus, user, fakeFetch(noGuidNoLinkNoDateRss, 'application/rss+xml'))
+    expect(r2.inserted).toBe(0)
   } finally {
     vi.useRealTimers()
   }
@@ -154,8 +154,8 @@ test('sniffs JSON Feed body even when served with a non-JSON content-type', asyn
   const bus = createEventBus()
   const user = await repo.createRemoteUser({ handle: 'jf2', displayName: 'JF2', feedUrl: 'https://ex.com/f2.json' })
   const json = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [{ id: 'b1', url: 'https://ex.com/b1', title: 'Sniffed', content_text: 'sniffed body', date_published: '2026-01-01T00:00:00Z' }] })
-  const n = await ingestRemoteUser(repo, bus, user, fakeFetch(json, 'text/plain'))
-  expect(n).toBe(1)
+  const r = await ingestRemoteUser(repo, bus, user, fakeFetch(json, 'text/plain'))
+  expect(r.inserted).toBe(1)
   const tl = await repo.getTimeline(10)
   expect(tl[0].guid).toBe('b1')
   expect(tl[0].title).toBe('Sniffed')
@@ -172,8 +172,8 @@ test('a malformed item date degrades to "now" instead of killing the whole feed'
       { id: 'good1', url: 'https://ex.com/good1', title: 'Good Date', content_text: 'body two', date_published: '2026-01-01T00:00:00Z' },
     ],
   })
-  const n = await ingestRemoteUser(repo, bus, user, fakeFetch(json, 'application/feed+json'))
-  expect(n).toBe(2)
+  const r = await ingestRemoteUser(repo, bus, user, fakeFetch(json, 'application/feed+json'))
+  expect(r.inserted).toBe(2)
   const tl = await repo.getTimeline(10)
   const bad = tl.find((p) => p.guid === 'bad1')
   expect(bad).toBeDefined()
@@ -213,8 +213,8 @@ test('an XML feed mislabeled as JSON still parses as RSS', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const user = await repo.createRemoteUser({ handle: 'mislabeled', displayName: 'M', feedUrl: 'https://ex.com/f' })
-  const n = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/json'))
-  expect(n).toBe(1)
+  const r = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/json'))
+  expect(r.inserted).toBe(1)
 })
 
 test('a BOM-prefixed JSON Feed served as text/plain parses as JSON Feed', async () => {
@@ -230,10 +230,60 @@ test('backfill stays silent when the first sync was empty (pin, not a change)', 
   const seen = vi.fn()
   bus.onNewPost(seen)
   const empty = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', title: 'Slow Start', items: [] })
-  expect(await ingestRemoteUser(repo, bus, user, fakeFetch(empty, 'application/feed+json'))).toBe(0)
+  expect((await ingestRemoteUser(repo, bus, user, fakeFetch(empty, 'application/feed+json'))).inserted).toBe(0)
   const two = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [
     { id: 's1', content_text: 'one' }, { id: 's2', content_text: 'two' },
   ] })
-  expect(await ingestRemoteUser(repo, bus, user, fakeFetch(two, 'application/feed+json'))).toBe(2)
+  expect((await ingestRemoteUser(repo, bus, user, fakeFetch(two, 'application/feed+json'))).inserted).toBe(2)
   expect(seen).toHaveBeenCalledTimes(0) // still backfill: nothing was ever live-visible
+})
+
+const RSS_WITH_PUSH = `<?xml version="1.0"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>P</title><link>https://blog.example.com</link><description>d</description><atom:link href="https://blog.example.com/feed.xml" rel="self"/><atom:link href="https://hub.example.com/hub" rel="hub"/><cloud domain="blog.example.com" port="5337" path="/rsscloud/pleaseNotify" registerProcedure="" protocol="http-post"/><item><guid>pg1</guid><title>t</title><description>b</description></item></channel></rss>`
+
+test('parseFeedWithMeta yields items AND discovery from one parse (rss)', async () => {
+  const { items, discovery } = await parseFeedWithMeta(RSS_WITH_PUSH)
+  expect(items.length).toBe(1)
+  expect(discovery.hubs).toEqual(['https://hub.example.com/hub'])
+  expect(discovery.self).toBe('https://blog.example.com/feed.xml')
+  expect(discovery.cloud).toMatchObject({ domain: 'blog.example.com', port: 5337, path: '/rsscloud/pleaseNotify', protocol: 'http-post' })
+})
+
+test('parseFeedWithMeta discovery for json and atom; rdf yields none', async () => {
+  const json = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', title: 'J', feed_url: 'https://j.example.com/feed.json', hubs: [{ type: 'WebSub', url: 'https://hub.example.com/hub' }], items: [{ id: 'j1', content_text: 'x' }] })
+  const j = await parseFeedWithMeta(json)
+  expect(j.discovery.hubs).toEqual(['https://hub.example.com/hub'])
+  expect(j.discovery.self).toBe('https://j.example.com/feed.json')
+  const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>A</title><id>urn:a</id><link rel="self" href="https://a.example.com/atom.xml"/><link rel="hub" href="https://hub.example.com/hub"/><entry><id>a1</id><title>e</title></entry></feed>`
+  const a = await parseFeedWithMeta(atom)
+  expect(a.discovery.hubs).toEqual(['https://hub.example.com/hub'])
+  expect(a.discovery.self).toBe('https://a.example.com/atom.xml')
+})
+
+test('parseLinkHeader extracts hub and self rels', () => {
+  expect(parseLinkHeader('<https://hub.example.com/hub>; rel="hub", <https://blog.example.com/feed.xml>; rel="self"')).toEqual({ hubs: ['https://hub.example.com/hub'], self: 'https://blog.example.com/feed.xml' })
+  expect(parseLinkHeader(null)).toEqual({ hubs: [], self: null })
+})
+
+test('ingestRemoteUser returns discovery merging Link headers with body metadata', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'pusher', displayName: 'P', feedUrl: 'https://blog.example.com/feed.xml' })
+  const fetchFn = (async () => new Response(RSS_WITH_PUSH, { headers: { 'content-type': 'application/rss+xml', link: '<https://headerhub.example.com/h>; rel="hub"' } })) as unknown as typeof fetch
+  const r = await ingestRemoteUser(repo, bus, user, fetchFn)
+  expect(r.inserted).toBe(1)
+  expect(r.discovery.hubs).toEqual(['https://headerhub.example.com/h', 'https://hub.example.com/hub']) // header first, deduped
+  expect(r.discovery.self).toBe('https://blog.example.com/feed.xml')
+})
+
+test('ingestItems is the shared insert path (no fetch involved)', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'direct', displayName: 'D', feedUrl: 'https://d.example.com/f.xml' })
+  await repo.insertPost({ id: 'seed', authorId: user.id, source: 'remote', guid: 'seed-g', title: null, content: 'seed', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' }) // author has posts → emits live
+  const seen = vi.fn()
+  bus.onNewPost(seen)
+  const n = await ingestItems(repo, bus, user, [{ guid: 'fp1', title: null, content: 'pushed body', url: null, publishedAt: '2026-01-02T00:00:00.000Z' }])
+  expect(n).toBe(1)
+  expect(seen).toHaveBeenCalledTimes(1)
+  expect(await ingestItems(repo, bus, user, [{ guid: 'fp1', title: null, content: 'pushed body', url: null, publishedAt: '2026-01-02T00:00:00.000Z' }])).toBe(0)
 })

@@ -21,8 +21,8 @@ test('the loop closes: instance B ingests instance A user as a remote over plain
   const aliceAtB = await serviceB.addRemoteUser({ handle: 'alice-a', displayName: 'Alice (A)', feedUrl: 'http://a.example/users/alice/feed.xml' })
 
   const bridge = (async (url: string | URL | Request) => appA.request(String(url).replace('http://a.example', ''))) as unknown as typeof fetch
-  const inserted = await ingestRemoteUser(repoB, busB, aliceAtB, bridge)
-  expect(inserted).toBe(2)
+  const r = await ingestRemoteUser(repoB, busB, aliceAtB, bridge)
+  expect(r.inserted).toBe(2)
 
   const timeline = await repoB.getTimeline(10)
   const contents = timeline.map((e) => e.content)
@@ -36,5 +36,5 @@ test('the loop closes: instance B ingests instance A user as a remote over plain
   expect(bGuids).toEqual(aGuids)
 
   // idempotent re-ingest — the poller can hit A forever without duplicating
-  expect(await ingestRemoteUser(repoB, busB, aliceAtB, bridge)).toBe(0)
+  expect((await ingestRemoteUser(repoB, busB, aliceAtB, bridge)).inserted).toBe(0)
 })
