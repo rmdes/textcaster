@@ -8,6 +8,7 @@ export interface Config {
   publicUrl: string | null
   websub: WebSubMode
   rssCloud: boolean
+  pushIn: boolean
 }
 
 function positiveInt(name: string, raw: string): number {
@@ -43,6 +44,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (rawRssCloud !== 'on' && rawRssCloud !== 'off') throw new Error(`TEXTCASTER_RSSCLOUD must be "on" or "off", got "${rawRssCloud}"`)
   const rssCloud = rawRssCloud === 'on'
 
+  const rawPushIn = env.TEXTCASTER_PUSH_IN ?? 'on'
+  if (rawPushIn !== 'on' && rawPushIn !== 'off') throw new Error(`TEXTCASTER_PUSH_IN must be "on" or "off", got "${rawPushIn}"`)
+  const pushIn = rawPushIn === 'on'
+
   // Fail-fast ONLY for explicitly enabled push (spec H1): defaults stay bootable.
   if ((websub.mode !== 'off' || rssCloud) && !publicUrl) {
     throw new Error('TEXTCASTER_PUBLIC_URL is required when TEXTCASTER_WEBSUB or TEXTCASTER_RSSCLOUD is enabled')
@@ -56,5 +61,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicUrl,
     websub,
     rssCloud,
+    pushIn,
   }
 }

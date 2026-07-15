@@ -41,3 +41,11 @@ test('rssCloud accepts only on/off', () => {
   expect(loadConfig({ ...base, TEXTCASTER_RSSCLOUD: 'on' }).rssCloud).toBe(true)
   expect(() => loadConfig({ ...base, TEXTCASTER_RSSCLOUD: 'yes' })).toThrow('TEXTCASTER_RSSCLOUD')
 })
+test('pushIn defaults on, accepts off, rejects garbage', () => {
+  expect(loadConfig({ TEXTCASTER_TOKEN: 't' }).pushIn).toBe(true)
+  expect(loadConfig({ TEXTCASTER_TOKEN: 't', TEXTCASTER_PUSH_IN: 'off' }).pushIn).toBe(false)
+  expect(() => loadConfig({ TEXTCASTER_TOKEN: 't', TEXTCASTER_PUSH_IN: 'maybe' })).toThrow('TEXTCASTER_PUSH_IN')
+})
+test('pushIn on without publicUrl is NOT a startup error (dormant, not fatal)', () => {
+  expect(() => loadConfig({ TEXTCASTER_TOKEN: 't', TEXTCASTER_PUSH_IN: 'on' })).not.toThrow()
+})
