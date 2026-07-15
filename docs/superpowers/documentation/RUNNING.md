@@ -49,18 +49,22 @@ SSE endpoint server-side.
 
 ## Stale DB warning
 
-**The spine has no schema migrations yet.** If you're upgrading across a
-schema change — including just pulling new commits after not running core
-for a while — delete the dev database before starting core:
+**Schema changes are now migration-gated.** Core refuses to start against a
+database it cannot handle, with a clear error instead of silent 500s:
 
-```bash
-rm -f core/data/textcaster.db
-```
+- `pre-migration database — delete it (dev data only) and restart` — the file
+  predates the migration system. **The first boot after this change will say
+  exactly that for every existing dev DB, including freshly recreated
+  spine-era ones.** Delete it:
 
-An old-shape DB doesn't error at startup; it fails quietly later, as 500s on
-every `POST /posts` and `POST /users`, and as swallowed-per-poll errors for
-remote feeds. If core is throwing 500s on a fresh checkout, this is the
-first thing to check.
+  ```bash
+  rm -f core/data/textcaster.db
+  ```
+
+- `database is newer than this build` — the file was created by a newer
+  checkout; update your checkout (or delete the dev DB).
+
+From now on, schema upgrades apply automatically at startup.
 
 ## Run
 

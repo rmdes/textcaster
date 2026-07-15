@@ -66,30 +66,58 @@ export class SqliteRepository implements Repository {
   }
 }
 
+// index N-1 holds the statements that bring the schema to version N.
+const MIGRATIONS: string[][] = [
+  [
+    `CREATE TABLE users (
+      id text PRIMARY KEY,
+      kind text NOT NULL,
+      handle text NOT NULL UNIQUE,
+      display_name text NOT NULL,
+      feed_url text,
+      created_at text NOT NULL
+    )`,
+    `CREATE TABLE posts (
+      id text PRIMARY KEY,
+      author_id text NOT NULL REFERENCES users(id),
+      source text NOT NULL,
+      guid text NOT NULL,
+      title text,
+      content text NOT NULL,
+      url text,
+      published_at text NOT NULL,
+      created_at text NOT NULL,
+      CONSTRAINT posts_author_guid_uq UNIQUE (author_id, guid)
+    )`,
+    'CREATE INDEX posts_published_idx ON posts (published_at, id)',
+    'CREATE INDEX posts_created_idx ON posts (created_at, id)',
+  ],
+]
+
+function migrate(sqlite: InstanceType<typeof Database>): void {
+  const version = sqlite.pragma('user_version', { simple: true }) as number
+  if (version > MIGRATIONS.length) {
+    throw new Error(`database is newer than this build (version ${version}, this build knows ${MIGRATIONS.length})`)
+  }
+  if (version === 0) {
+    const { n } = sqlite.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'").get() as { n: number }
+    // Intentionally rejects valid current-schema spine DBs too: everything
+    // created before the migration era has user_version = 0, and we do not
+    // sniff the schema to grandfather them in. Deletion is the designed outcome.
+    if (n > 0) throw new Error('pre-migration database — delete it (dev data only) and restart')
+  }
+  for (let v = version + 1; v <= MIGRATIONS.length; v++) {
+    sqlite.transaction(() => {
+      for (const stmt of MIGRATIONS[v - 1]) sqlite.exec(stmt)
+      sqlite.pragma(`user_version = ${v}`)
+    })()
+  }
+}
+
 export async function createSqliteRepository(filename: string): Promise<SqliteRepository> {
   const sqlite = new Database(filename)
   sqlite.pragma('foreign_keys = ON')
+  migrate(sqlite)
   const db = new Kysely<DB>({ dialect: new SqliteDialect({ database: sqlite }) })
-  await db.schema.createTable('users').ifNotExists()
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('kind', 'text', (c) => c.notNull())
-    .addColumn('handle', 'text', (c) => c.notNull().unique())
-    .addColumn('display_name', 'text', (c) => c.notNull())
-    .addColumn('feed_url', 'text')
-    .addColumn('created_at', 'text', (c) => c.notNull())
-    .execute()
-  await db.schema.createTable('posts').ifNotExists()
-    .addColumn('id', 'text', (c) => c.primaryKey())
-    .addColumn('author_id', 'text', (c) => c.notNull().references('users.id'))
-    .addColumn('source', 'text', (c) => c.notNull())
-    .addColumn('guid', 'text', (c) => c.notNull())
-    .addColumn('title', 'text')
-    .addColumn('content', 'text', (c) => c.notNull())
-    .addColumn('url', 'text')
-    .addColumn('published_at', 'text', (c) => c.notNull())
-    .addColumn('created_at', 'text', (c) => c.notNull())
-    .addUniqueConstraint('posts_author_guid_uq', ['author_id', 'guid'])
-    .execute()
-  await db.schema.createIndex('posts_published_idx').ifNotExists().on('posts').column('published_at').execute()
   return new SqliteRepository(db)
 }
