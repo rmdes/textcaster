@@ -54,7 +54,7 @@ test('onLocalPost never rejects, even when fetch explodes (H4)', async () => {
 })
 
 const SELF_ENV = { TEXTCASTER_TOKEN: 't', TEXTCASTER_PUBLIC_URL: 'https://cast.example.com', TEXTCASTER_WEBSUB: 'self' }
-const publicLookup = async () => ({ address: '93.184.216.34' })
+const publicLookup = async () => [{ address: '93.184.216.34' }]
 
 function subForm(over: Record<string, string> = {}): Record<string, string> {
   return { 'hub.mode': 'subscribe', 'hub.topic': 'https://cast.example.com/users/alice/feed.xml', 'hub.callback': 'https://cb.example.com/receive', ...over }
@@ -123,7 +123,7 @@ test('websub subscribe rejects bad topics, private callbacks, and over-cap hosts
   for (let i = 0; i < 20; i++) {
     await repo.upsertSubscription({ id: `cap${i}`, protocol: 'websub', topic: 'https://cast.example.com/users/alice/feed.xml', callback: `https://full.example.com/cb${i}`, callbackHost: 'full.example.com', secret: null, expiresAt: '2027-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
   }
-  const capLookup = async () => ({ address: '93.184.216.34' })
+  const capLookup = async () => [{ address: '93.184.216.34' }]
   expect((await handleWebSubRequest({ ...deps, lookupFn: capLookup }, subForm({ 'hub.callback': 'https://full.example.com/one-more' }))).status).toBe(429)
 })
 

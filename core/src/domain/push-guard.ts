@@ -1,7 +1,7 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 
-export type LookupFn = (hostname: string) => Promise<{ address: string }>
+export type LookupFn = (hostname: string) => Promise<Array<{ address: string }>>
 
 export function isPrivateIp(ip: string): boolean {
   if (isIP(ip) === 4) {
@@ -32,9 +32,11 @@ export function isPrivateIp(ip: string): boolean {
   return false
 }
 
+const defaultLookup: LookupFn = (h) => lookup(h, { all: true })
+
 // SSRF gate for subscriber callbacks (spec H2 rule 2). Resolution happens at
 // registration only; the rebinding residual is an accepted, ledgered decision.
-export async function checkCallbackUrl(raw: string, lookupFn: LookupFn = lookup): Promise<{ ok: true; host: string } | { ok: false; reason: string }> {
+export async function checkCallbackUrl(raw: string, lookupFn: LookupFn = defaultLookup): Promise<{ ok: true; host: string } | { ok: false; reason: string }> {
   let url: URL
   try {
     url = new URL(raw)
@@ -49,8 +51,10 @@ export async function checkCallbackUrl(raw: string, lookupFn: LookupFn = lookup)
     return { ok: true, host }
   }
   try {
-    const { address } = await lookupFn(host)
-    if (isPrivateIp(address)) return { ok: false, reason: 'callback host resolves to a private address' }
+    const addrs = await lookupFn(host)
+    // Resolve ALL records; any-private-rejects closes the multi-record bypass (rebinding remains accepted/ledgered).
+    if (addrs.length === 0) return { ok: false, reason: 'callback host does not resolve' }
+    if (addrs.some((a) => isPrivateIp(a.address))) return { ok: false, reason: 'callback host resolves to a private address' }
   } catch {
     return { ok: false, reason: 'callback host does not resolve' }
   }

@@ -1,8 +1,8 @@
 import { test, expect } from 'vitest'
 import { isPrivateIp, checkCallbackUrl } from '../src/domain/push-guard.ts'
 
-const publicLookup = async () => ({ address: '93.184.216.34' })
-const privateLookup = async () => ({ address: '10.0.0.5' })
+const publicLookup = async () => [{ address: '93.184.216.34' }]
+const privateLookup = async () => [{ address: '10.0.0.5' }]
 
 test('isPrivateIp classifies the RFC ranges', () => {
   for (const ip of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1', '169.254.0.1', '0.0.0.0', '::1', 'fc00::1', 'fe80::1']) {
@@ -42,4 +42,11 @@ test('v4-mapped IPv6 literals cannot bypass the guard (URL canonicalizes to hex 
   expect((await checkCallbackUrl('http://[::ffff:127.0.0.1]/x', publicLookup)).ok).toBe(false)
   expect((await checkCallbackUrl('http://[::ffff:10.0.0.5]/x', publicLookup)).ok).toBe(false)
   expect((await checkCallbackUrl('http://[::ffff:5db8:d822]/x', publicLookup)).ok).toBe(true)
+})
+
+test('a host with ANY private record among its addresses is rejected (multi-record bypass)', async () => {
+  const mixed = async () => [{ address: '93.184.216.34' }, { address: '10.0.0.5' }]
+  expect((await checkCallbackUrl('https://mixed.example.com/x', mixed)).ok).toBe(false)
+  const empty = async () => []
+  expect((await checkCallbackUrl('https://empty.example.com/x', empty)).ok).toBe(false)
 })
