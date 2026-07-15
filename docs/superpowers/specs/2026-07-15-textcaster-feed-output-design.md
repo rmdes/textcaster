@@ -11,9 +11,9 @@ Basis: design spec `docs/superpowers/specs/2026-07-15-textcaster-design.md`
 The milestone where the federation loop closes: every local user's posts are
 emitted as standard feeds, so another Textcaster instance can ingest them as
 a remote user — two instances federate over plain RSS with zero extra
-protocol. Plus the publish side of real-time: WebSub (external hub by
-default, self-hosted hub as an operator choice) and rssCloud (operator
-toggle, off by default).
+protocol. Plus the publish side of real-time, all opt-in and off by
+default: WebSub (external hub or self-hosted hub, operator's choice) and
+rssCloud (operator toggle).
 
 Decisions taken at design time:
 
@@ -196,7 +196,7 @@ body goes to every subscriber of that topic (also makes the HMAC assertions
 deterministic in tests). External-hub mode publishes a ping for both
 topics.
 
-### Mode: external hub (default)
+### Mode: external hub (when a hub URL is configured)
 
 Per topic, form-POST to the configured hub:
 `hub.mode=publish&hub.topic=<topic>&hub.url=<topic>` (`hub.url` kept for
