@@ -17,6 +17,12 @@ test('POST /posts requires the bearer token', async () => {
   expect(res.status).toBe(401)
 })
 
+test('POST /posts rejects a wrong token of the same length as the real one', async () => {
+  const app = await makeApp()
+  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer wrongo' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice', content: 'hi' }) })
+  expect(res.status).toBe(401)
+})
+
 test('POST /posts then GET /timeline shows the post', async () => {
   const app = await makeApp()
   const post = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice', content: 'hi there' }) })
