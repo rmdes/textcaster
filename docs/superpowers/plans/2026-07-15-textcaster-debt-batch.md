@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing only — TypeScript/ESM, Kysely + better-sqlite3, Hono, Vitest, SvelteKit. No new dependencies.
 
-**Spec:** `docs/superpowers/specs/2026-07-15-textcaster-debt-batch-design.md` (rev 3). Review context: `docs/superpowers/reviews/2026-07-15-debt-batch-spec-review.md`.
+**Spec:** `docs/superpowers/specs/2026-07-15-textcaster-debt-batch-design.md` (rev 3). Review context: `docs/superpowers/reviews/2026-07-15-debt-batch-spec-review.md` and `docs/superpowers/reviews/2026-07-15-debt-batch-plan-review.md` (M1/D1 and polish applied in this revision).
 
 ## Global Constraints
 
@@ -36,7 +36,7 @@ core/src/api/cursor.ts            # NEW: parse/format wire cursor
 core/src/api/app.ts               # /timeline params + nextCursor; SSE replay; displayName fallback
 core/src/config.ts                # numeric guards
 core/test/migrations.test.ts      # NEW
-docs/RUNNING.md                   # stale-DB section rewrite
+docs/superpowers/documentation/RUNNING.md  # stale-DB section rewrite
 web/src/routes/stream/+server.ts  # forward Last-Event-ID; content-type on OK only
 web/src/lib/api.ts                # TimelinePage, error surfacing, before param
 web/src/routes/+page.server.ts    # ?before= + isFirstPage
@@ -51,7 +51,7 @@ web/src/routes/+page.svelte       # Older-posts link; island gating
 **Files:**
 - Modify: `core/src/storage/sqlite.ts:69-95` (replace `createSqliteRepository`'s bootstrap)
 - Create: `core/test/migrations.test.ts`
-- Modify: `docs/RUNNING.md` (the `## Stale DB warning` section)
+- Modify: `docs/superpowers/documentation/RUNNING.md` (the `## Stale DB warning` section)
 
 **Interfaces:**
 - Consumes: current `createSqliteRepository(filename)` and `SqliteRepository` (unchanged class).
@@ -139,7 +139,7 @@ const MIGRATIONS: string[][] = [
       url text,
       published_at text NOT NULL,
       created_at text NOT NULL,
-      UNIQUE (author_id, guid)
+      CONSTRAINT posts_author_guid_uq UNIQUE (author_id, guid)
     )`,
     'CREATE INDEX posts_published_idx ON posts (published_at, id)',
     'CREATE INDEX posts_created_idx ON posts (created_at, id)',
@@ -175,7 +175,7 @@ export async function createSqliteRepository(filename: string): Promise<SqliteRe
 }
 ```
 
-(The Kysely `db.schema.createTable/createIndex` bootstrap is deleted. Everything above `createSqliteRepository` — table interfaces, `rowToUser`, the `SqliteRepository` class — is unchanged.)
+(The Kysely `db.schema.createTable/createIndex` bootstrap is deleted. Everything above `createSqliteRepository` — table interfaces, `rowToUser`, the `SqliteRepository` class — is unchanged. The named `CONSTRAINT posts_author_guid_uq` keeps the existing comment at `sqlite.ts:42-43` accurate.)
 
 - [ ] **Step 4: Run — verify everything passes**
 
@@ -184,7 +184,7 @@ Expected: PASS — 4 new migration tests plus the whole existing suite (contract
 
 - [ ] **Step 5: Update RUNNING.md**
 
-Replace the body of the `## Stale DB warning` section (keep the heading) with:
+In `docs/superpowers/documentation/RUNNING.md`, replace the body of the `## Stale DB warning` section (keep the heading) with:
 
 ```markdown
 **Schema changes are now migration-gated.** Core refuses to start against a
@@ -211,7 +211,7 @@ Run: `npm run typecheck -w core`
 Expected: exit 0.
 
 ```bash
-git add core/src/storage/sqlite.ts core/test/migrations.test.ts docs/RUNNING.md
+git add core/src/storage/sqlite.ts core/test/migrations.test.ts docs/superpowers/documentation/RUNNING.md
 git commit -m "$(printf 'core: user_version migrations, fail-fast on unversioned or future DBs\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
 ```
 
@@ -289,7 +289,7 @@ Append inside the `describe('Repository contract', ...)` block in `core/src/doma
 - [ ] **Step 2: Run — verify it fails**
 
 Run: `npm test -w core`
-Expected: FAIL — TypeScript/vitest errors: `getTimelineAfter`/`getPost` do not exist; `getTimeline` takes 1 argument.
+Expected: FAIL at runtime (vitest does not typecheck): `TypeError: repo.getTimelineAfter is not a function`, `TypeError: repo.getPost is not a function`, and the pagination tests fail because `getTimeline` ignores its second argument.
 
 - [ ] **Step 3: Implement types, interface, and queries**
 
@@ -760,7 +760,7 @@ test('an unknown Last-Event-ID skips replay silently and goes live', async () =>
 ```
 
 Run: `npm test -w core`
-Expected: FAIL — replay tests time out / never see the missed frames (the route ignores `Last-Event-ID`); typecheck-level failures if `service.getPost` is referenced before Step 2. (The existing SSE test also has a private read loop — leave it; the new `readUntil` helper is for the new tests.)
+Expected: FAIL — replay tests time out / never see the missed frames (the route ignores `Last-Event-ID`); `TypeError: service.getPost is not a function` once the route references it before Step 2. (The existing SSE test also has a private read loop — leave it; the new `readUntil` helper is for the new tests.)
 
 - [ ] **Step 2: Implement passthroughs + replay**
 
@@ -900,7 +900,7 @@ test('backfill stays silent when the first sync was empty (pin, not a change)', 
 (If `parseFeed` is not yet imported in `ingest.test.ts`, add it to the existing import from `../src/domain/ingest.ts`.)
 
 Run: `npm test -w core`
-Expected: FAIL — config tests (no guard), displayName test (blank stored as-is), guid-collision test (no separator), mislabeled-XML test (`JSON.parse` throws). The BOM and backfill-pin tests may already pass — that is fine; they are pins.
+Expected: FAIL on four fronts — config tests (no guard), displayName test (blank stored as-is), guid-collision test (no separator), mislabeled-XML test (`JSON.parse` throws). The BOM test is a genuine RED too: `trimStart()` strips the BOM for the sniff, but `JSON.parse` still rejects the un-stripped body. Only the backfill-pin test may already pass — it is a pin, that is fine.
 
 - [ ] **Step 2: Implement all four**
 
@@ -941,15 +941,15 @@ function fallbackGuid(title: string | null, content: string, rawDate: string): s
   return createHash('sha256').update((title ?? '') + '\0' + content + '\0' + rawDate).digest('hex')
 }
 ```
-2. Sniff-only detection — `parseFeed` drops the content-type disjunct and strips a BOM once at entry. Replace the function's opening lines:
+2. Sniff-only detection — `parseFeed` drops the content-type disjunct and strips a BOM once at entry. Replace the function's opening lines (the BOM-stripped body is named `cleanBody` — do NOT name it `text`, which would shadow the per-item `text` const inside both branches):
 ```ts
-export async function parseFeed(body: string, contentType: string): Promise<ParsedItem[]> {
-  const text = body.charCodeAt(0) === 0xfeff ? body.slice(1) : body
+export async function parseFeed(body: string, _contentType: string): Promise<ParsedItem[]> {
+  const cleanBody = body.charCodeAt(0) === 0xfeff ? body.slice(1) : body
   const now = new Date().toISOString()
-  if (looksLikeJson(text)) {
-    const feed = JSON.parse(text) as { items?: Array<Record<string, unknown>> }
+  if (looksLikeJson(cleanBody)) {
+    const feed = JSON.parse(cleanBody) as { items?: Array<Record<string, unknown>> }
 ```
-…and the RSS branch parses `text` instead of `body` (`await rss.parseString(text)`). The `contentType` parameter stays in the signature (callers pass it; it is now unused — prefix it with `_` to satisfy the linter-free build: rename to `_contentType`). Update the one call site in `ingestRemoteUser` accordingly (no change needed if the argument is still passed).
+…and the RSS branch parses `cleanBody` instead of `body` (`await rss.parseString(cleanBody)`). The content-type parameter stays in the signature for call-site compatibility but is now unused — rename it to `_contentType` as shown.
 
 - [ ] **Step 3: Run — verify it passes**
 
@@ -1066,20 +1066,29 @@ git commit -m "$(printf 'web: stream proxy forwards Last-Event-ID; honest error 
 
 ---
 
-### Task 8: Web API client — pagination shape, error surfacing, auth-header pins
+### Task 8: Web pagination end to end — API client + page (merged per plan-review D1)
+
+This task deliberately spans the API client and the page that consumes it, so
+the commit lands with every web gate green (the client's return-shape change
+breaks the load tests mid-task; they are fixed within this same task, never
+committed red).
 
 **Files:**
 - Modify: `web/src/lib/api.ts`
 - Modify: `web/src/lib/api.test.ts`
+- Modify: `web/src/routes/+page.server.ts` (load; actions untouched)
+- Modify: `web/src/routes/+page.svelte`
+- Modify: `web/src/routes/page.load.test.ts`
 
 **Interfaces:**
 - Consumes: core's `{ timeline, nextCursor }` response (Task 4) and error bodies `{ error: string }`.
-- Produces (Task 9 relies on these exact shapes):
+- Produces:
   - `interface TimelinePage { timeline: TimelineEntry[]; nextCursor: string | null }`
   - `getTimeline(f: typeof fetch, before?: string): Promise<TimelinePage>` — `before` is the OPAQUE wire cursor string; the client never parses it.
   - `createPost` / `addRemoteUser` unchanged signatures, but thrown errors carry core's `error` message when present.
+  - `load` returns `{ timeline, nextCursor: string | null, isFirstPage: boolean, coreDown?: true }`; the live island mounts only when `isFirstPage`.
 
-- [ ] **Step 1: Failing tests — replace `web/src/lib/api.test.ts` entirely**
+- [ ] **Step 1: Failing api-client tests — replace `web/src/lib/api.test.ts` entirely**
 
 ```ts
 import { test, expect, vi } from 'vitest'
@@ -1144,7 +1153,7 @@ test('addRemoteUser falls back to a status message when the body has no error fi
 Run: `npm test -w web`
 Expected: FAIL — `getTimeline` returns an array (no `.timeline`), errors say `createPost 400`.
 
-- [ ] **Step 2: Implement — replace `web/src/lib/api.ts` entirely**
+- [ ] **Step 2: Implement the api client — replace `web/src/lib/api.ts` entirely**
 
 ```ts
 import { env } from '$env/dynamic/private'
@@ -1202,34 +1211,11 @@ export async function addRemoteUser(
 }
 ```
 
-- [ ] **Step 3: Run — verify api tests pass; load tests break as expected**
-
 Run: `npm test -w web`
-Expected: the 6 api tests PASS; `page.load.test.ts` now FAILS (`result.timeline` is undefined — `load` still treats `getTimeline` as returning an array). That failure is Task 9's RED state — do NOT fix it here; Task 9 starts from it. `npm run check -w web` will also flag `+page.server.ts` — expected, same reason.
+Expected: the 6 api tests PASS; `page.load.test.ts` now FAILS (`result.timeline` is undefined — `load` still treats `getTimeline` as returning an array). That is this task's mid-point, NOT a commit point — continue.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Update the load tests — replace `web/src/routes/page.load.test.ts` entirely**
 
-```bash
-git add web/src/lib/api.ts web/src/lib/api.test.ts
-git commit -m "$(printf 'web: api client returns timeline pages and surfaces core error messages\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
-```
-
----
-
-### Task 9: Web page — `?before=`, Older-posts link, island gating
-
-**Files:**
-- Modify: `web/src/routes/+page.server.ts` (load)
-- Modify: `web/src/routes/+page.svelte`
-- Modify: `web/src/routes/page.load.test.ts`
-
-**Interfaces:**
-- Consumes: `getTimeline(f, before?) → TimelinePage` (Task 8).
-- Produces: `load` returns `{ timeline, nextCursor: string | null, isFirstPage: boolean, coreDown?: true }`. The island mounts only when `isFirstPage`.
-
-- [ ] **Step 1: Update the load tests (RED already exists from Task 8)**
-
-Replace `web/src/routes/page.load.test.ts` entirely:
 ```ts
 import { test, expect, vi } from 'vitest'
 import { load } from './+page.server.ts'
@@ -1280,9 +1266,9 @@ test('load returns an empty timeline with coreDown when the core is unreachable'
 ```
 
 Run: `npm test -w web`
-Expected: FAIL — `load` neither accepts `url` semantics nor returns the new keys.
+Expected: load tests still FAIL (`load` neither reads `url` nor returns the new keys) — the RED for the next step.
 
-- [ ] **Step 2: Implement the load change**
+- [ ] **Step 4: Implement the load change**
 
 In `web/src/routes/+page.server.ts`, replace the `load` export (actions stay untouched):
 ```ts
@@ -1298,7 +1284,7 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 }
 ```
 
-- [ ] **Step 3: Wire the page**
+- [ ] **Step 5: Wire the page**
 
 In `web/src/routes/+page.svelte`:
 
@@ -1316,7 +1302,7 @@ In `web/src/routes/+page.svelte`:
 ```
 (R2 note, deliberately NOT addressed with code: live frames may interleave with replayed frames in the island's prepend order until a refresh — that is the island's existing semantic; do not add client-side sorting.)
 
-- [ ] **Step 4: Run — verify everything passes**
+- [ ] **Step 6: Run — verify everything passes**
 
 Run: `npm test -w web`
 Expected: PASS — all web tests (api + load + actions + stream).
@@ -1324,16 +1310,16 @@ Expected: PASS — all web tests (api + load + actions + stream).
 Run: `npm run check -w web && npm run build -w web`
 Expected: 0 errors; build succeeds.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit (single commit, all green)**
 
 ```bash
-git add web/src/routes/+page.server.ts web/src/routes/+page.svelte web/src/routes/page.load.test.ts
-git commit -m "$(printf 'web: no-JS pagination via ?before= and Older-posts link; live island only on page 1\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git add web/src/lib/api.ts web/src/lib/api.test.ts web/src/routes/+page.server.ts web/src/routes/+page.svelte web/src/routes/page.load.test.ts
+git commit -m "$(printf 'web: cursor pagination end to end (TimelinePage, ?before=, Older-posts link, island gating)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
 ```
 
 ---
 
-### Task 10: TypeScript alignment + whole-batch verification
+### Task 9: TypeScript alignment + whole-batch verification
 
 **Files:**
 - Modify: `core/package.json` (typescript devDependency) — or `web/package.json` if the fallback path is taken
@@ -1361,18 +1347,38 @@ npm run build -w web
 ```
 Expected: core suite green (existing + this batch's additions), web suite green, typecheck exit 0, check 0 errors, build success.
 
-- [ ] **Step 3: Manual replay smoke (the payoff check)**
+- [ ] **Step 3: Manual end-to-end smoke — replay, cursor, and the web pagination UI (plan-review D3)**
 
 ```bash
-TEXTCASTER_DB=:memory: TEXTCASTER_TOKEN=dev npm run dev -w core &
+TEXTCASTER_DB=:memory: TEXTCASTER_TOKEN=dev TEXTCASTER_POLL_SECONDS=60 npm run dev -w core &
 sleep 2
-curl -s -XPOST localhost:8787/posts -H 'authorization: Bearer dev' -H 'content-type: application/json' -d '{"handle":"a","displayName":"A","content":"first"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["post"]["id"])'
-# note the printed POST_ID, then:
+# 103 posts total: "first", then post 1..101, then "tip" — page 1 fills at 100.
+curl -s -XPOST localhost:8787/posts -H 'authorization: Bearer dev' -H 'content-type: application/json' -d '{"handle":"a","displayName":"A","content":"first"}' >/dev/null
+for i in $(seq 1 101); do curl -s -XPOST localhost:8787/posts -H 'authorization: Bearer dev' -H 'content-type: application/json' -d "{\"handle\":\"a\",\"displayName\":\"A\",\"content\":\"post $i\"}" >/dev/null; done
+TIP_ID=$(curl -s -XPOST localhost:8787/posts -H 'authorization: Bearer dev' -H 'content-type: application/json' -d '{"handle":"a","displayName":"A","content":"tip"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["post"]["id"])')
+
+# Replay smoke: one post "missed" after the tip anchor.
 curl -s -XPOST localhost:8787/posts -H 'authorization: Bearer dev' -H 'content-type: application/json' -d '{"handle":"a","displayName":"A","content":"missed while away"}' >/dev/null
-curl -s -N -m 3 -H "Last-Event-ID: <POST_ID>" localhost:8787/timeline/stream | head -8
-kill %1
+curl -s -N -m 3 -H "Last-Event-ID: $TIP_ID" localhost:8787/timeline/stream | head -8
+# Expected frames include BOTH "tip" (inclusive re-delivery) and "missed while away".
+
+# Cursor smoke over HTTP:
+CUR=$(curl -s 'localhost:8787/timeline?limit=1' | python3 -c 'import json,sys; print(json.load(sys.stdin)["nextCursor"])')
+curl -s "localhost:8787/timeline?before=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$CUR'))")&limit=1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["timeline"][0]["content"])'
+# Expected: the next-older post's content ("missed while away" is newest, so this prints "tip").
+
+# Web pagination UI smoke (D3 — the two assertions unit tests can't reach):
+npm run dev -w web &
+sleep 3
+curl -s http://localhost:5173/ | grep -o 'Older posts' | head -1
+# Expected: "Older posts" (page 1 is full → link renders).
+HREF=$(curl -s http://localhost:5173/ | grep -o '/?before=[^"]*' | head -1)
+curl -s "http://localhost:5173$HREF" | grep -c 'Older posts'
+# Expected: 0 (page 2 is short → no link; also demonstrates island gating input isFirstPage=false in the embedded data).
+curl -s "http://localhost:5173$HREF" | grep -o '>first<' | head -1
+# Expected: ">first<" (the oldest post renders on page 2 with no JavaScript).
+kill %1 %2
 ```
-Expected: the stream's first frames include `missed while away` (replayed) — and `first` itself (inclusive re-delivery). Also `GET '/timeline?limit=1'` returns a `nextCursor`, and `GET "/timeline?before=<that cursor>&limit=1"` returns the older post.
 
 - [ ] **Step 4: Commit**
 
@@ -1383,8 +1389,9 @@ git commit -m "$(printf 'chore: one TypeScript major across the workspace; debt 
 
 ---
 
-## Self-Review (done at plan-writing time)
+## Self-Review (done at plan-writing time; plan-review M1/D1/M2/D2/D3/D4 applied)
 
-- **Spec coverage:** migrations + fail-fast + RUNNING.md → Task 1; cursor/replay repo primitives + contract pins (incl. H1/R1 regression pins) → Task 2; dup-handle contract + H7/H8 guard surgery → Task 3; `?before=`/`nextCursor` API → Task 4; SSE replay (subscribe-first H2, inclusive R1, cap-skip H4, unknown-id, backfill-accepted H3 needs no code) → Task 5; config guards + displayName + `'\0'` separator (H9 noted) + sniff-only/BOM + backfill pin → Task 6; proxy Last-Event-ID + error content-type (H10b) → Task 7; TimelinePage + error surfacing (H10a) + auth-header pins → Task 8; `isFirstPage`/Older-posts/island gating + R2 accepted → Task 9; TS alignment + gates + replay smoke → Task 10. Non-goals built nowhere.
+- **Spec coverage:** migrations + fail-fast + RUNNING.md → Task 1; cursor/replay repo primitives + contract pins (incl. H1/R1 regression pins) → Task 2; dup-handle contract + H7/H8 guard surgery → Task 3; `?before=`/`nextCursor` API → Task 4; SSE replay (subscribe-first H2, inclusive R1, cap-skip H4, unknown-id, backfill-accepted H3 needs no code) → Task 5; config guards + displayName + `'\0'` separator (H9 noted) + sniff-only/BOM + backfill pin → Task 6; proxy Last-Event-ID + error content-type (H10b) → Task 7; TimelinePage + error surfacing (H10a) + auth-header pins + `isFirstPage`/Older-posts/island gating + R2 accepted → Task 8 (merged); TS alignment + gates + replay/cursor/web-UI smoke → Task 9. Non-goals built nowhere.
 - **Placeholder scan:** every code step carries complete code; the only prose-directed edits are RUNNING.md (Task 1, exact replacement text given) and the two-line displayName insertion (Task 6, exact line given).
-- **Type consistency:** `TimelineCursor {publishedAt,id}` defined once (Task 2), consumed by repo (2), service passthrough (4), cursor codec (4); `getTimelineAfter(sinceCreatedAt: string, limit: number)` identical in repo (2), service (5), route (5); `HandleTakenError extends DomainError` (3) relied on by service catch (3) and existing onError mapping; `TimelinePage {timeline,nextCursor}` (8) consumed by load (9); `isFirstPage` produced (9) and consumed in the same task's page. Web wire cursor stays an opaque `string` end to end — only core parses it.
+- **Type consistency:** `TimelineCursor {publishedAt,id}` defined once (Task 2), consumed by repo (2), service passthrough (4), cursor codec (4); `getTimelineAfter(sinceCreatedAt: string, limit: number)` identical in repo (2), service (5), route (5); `HandleTakenError extends DomainError` (3) relied on by service catch (3) and existing onError mapping; `TimelinePage {timeline,nextCursor}` and `isFirstPage` produced and consumed inside Task 8. Web wire cursor stays an opaque `string` end to end — only core parses it.
+- **Gate discipline:** every task's commit lands with its workspace's gates green; the one deliberate mid-task red (Task 8 between Steps 2 and 6) never reaches a commit.
