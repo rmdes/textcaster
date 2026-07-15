@@ -8,7 +8,7 @@ import { createService } from './domain/service.ts'
 import { createApp } from './api/app.ts'
 import { hubLinkUrl } from './domain/feed.ts'
 import { createPush, handleWebSubRequest, handleRssCloudRequest } from './domain/push.ts'
-import { pollAll } from './domain/ingest.ts'
+import { createPushIn, runPollCycle } from './domain/push-in.ts'
 
 const config = loadConfig()
 if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
@@ -17,6 +17,8 @@ const repo = await createSqliteRepository(config.dbPath)
 const bus = createEventBus()
 const service = createService(repo, bus)
 const push = createPush({ repo, config })
+const pushIn = createPushIn({ repo, config })
+if (config.pushIn && !config.publicUrl) console.log('push-in inactive: no public URL')
 const app = createApp({
   service,
   bus,
@@ -34,12 +36,13 @@ const app = createApp({
 // H4 seam: onLocalPost never rejects; void is safe here by contract.
 bus.onNewPost((e) => { void push.onLocalPost(e) })
 
+let tick = 0
 async function loop() {
+  tick++
   try {
-    await pollAll(repo, bus)
-    await repo.purgeExpiredSubscriptions(new Date().toISOString())
+    await runPollCycle({ repo, bus, config, pushIn }, tick)
   } catch (err) {
-    console.error('pollAll failed:', err instanceof Error ? err.message : err)
+    console.error('poll cycle failed:', err instanceof Error ? err.message : err)
   }
   setTimeout(loop, config.pollSeconds * 1000)
 }
