@@ -44,12 +44,14 @@ export async function ingestRemoteUser(repo: Repository, bus: EventBus, user: Us
   if (Buffer.byteLength(body) > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${Buffer.byteLength(body)} bytes`)
   const contentType = res.headers.get('content-type') ?? ''
   const items = await parseFeed(body, contentType)
+  const backfill = !(await repo.hasPostsByAuthor(user.id))
   let inserted = 0
   for (const item of items) {
-    const now = new Date().toISOString()
-    const post: Post = { id: randomUUID(), authorId: user.id, source: 'remote', guid: item.guid, title: item.title, content: item.content, url: item.url, publishedAt: item.publishedAt, createdAt: now }
+    const now = new Date()
+    const publishedAt = new Date(item.publishedAt).getTime() > now.getTime() ? now.toISOString() : item.publishedAt
+    const post: Post = { id: randomUUID(), authorId: user.id, source: 'remote', guid: item.guid, title: item.title, content: item.content, url: item.url, publishedAt, createdAt: now.toISOString() }
     if (await repo.insertPost(post)) {
-      bus.emitNewPost({ ...post, author: user })
+      if (!backfill) bus.emitNewPost({ ...post, author: user })
       inserted++
     }
   }

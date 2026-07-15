@@ -20,11 +20,11 @@ test('ingests RSS items as remote posts, once (idempotent), and emits new ones',
 
   const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/rss+xml'))
   expect(n1).toBe(1)
-  expect(seen).toHaveBeenCalledTimes(1)
+  expect(seen).toHaveBeenCalledTimes(0) // first sync for this author is a silent backfill
 
   const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/rss+xml'))
-  expect(n2).toBe(0) // dedup by guid
-  expect(seen).toHaveBeenCalledTimes(1)
+  expect(n2).toBe(0) // dedup by (author, guid)
+  expect(seen).toHaveBeenCalledTimes(0)
 
   const tl = await repo.getTimeline(10)
   expect(tl[0].source).toBe('remote')
@@ -44,6 +44,45 @@ test('parses JSON Feed items too', async () => {
   expect(tl[0].guid).toBe('a1')
   expect(tl[0].title).toBe('JF One')
   expect(tl[0].content).toBe('jf body')
+})
+
+const TWO_ITEM_RSS = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
+<item><title>One</title><link>https://ex.com/1</link><guid>https://ex.com/1</guid><description>Body one</description><pubDate>Wed, 01 Jan 2026 00:00:00 GMT</pubDate></item>
+<item><title>Two</title><link>https://ex.com/2</link><guid>https://ex.com/2</guid><description>Body two</description><pubDate>Thu, 02 Jan 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>`
+
+const THREE_ITEM_RSS = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
+<item><title>One</title><link>https://ex.com/1</link><guid>https://ex.com/1</guid><description>Body one</description><pubDate>Wed, 01 Jan 2026 00:00:00 GMT</pubDate></item>
+<item><title>Two</title><link>https://ex.com/2</link><guid>https://ex.com/2</guid><description>Body two</description><pubDate>Thu, 02 Jan 2026 00:00:00 GMT</pubDate></item>
+<item><title>Three</title><link>https://ex.com/3</link><guid>https://ex.com/3</guid><description>Body three</description><pubDate>Fri, 03 Jan 2026 00:00:00 GMT</pubDate></item>
+</channel></rss>`
+
+test('first sync of a feed inserts posts but stays silent on the bus; later syncs emit only new items', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
+  const seen = vi.fn()
+  bus.onNewPost(seen)
+
+  const n1 = await ingestRemoteUser(repo, bus, user, fakeFetch(TWO_ITEM_RSS, 'application/rss+xml'))
+  expect(n1).toBe(2)
+  expect(seen).toHaveBeenCalledTimes(0)
+
+  const n2 = await ingestRemoteUser(repo, bus, user, fakeFetch(THREE_ITEM_RSS, 'application/rss+xml'))
+  expect(n2).toBe(1)
+  expect(seen).toHaveBeenCalledTimes(1)
+})
+
+test('an item dated in the future is clamped to now', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
+  const futureRss = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
+<item><title>Future</title><link>https://ex.com/future</link><guid>https://ex.com/future</guid><description>Body</description><pubDate>Wed, 01 Jan 2099 00:00:00 GMT</pubDate></item>
+</channel></rss>`
+  await ingestRemoteUser(repo, bus, user, fakeFetch(futureRss, 'application/rss+xml'))
+  const tl = await repo.getTimeline(10)
+  expect(new Date(tl[0].publishedAt).getTime()).toBeLessThanOrEqual(Date.now())
 })
 
 function fakeFetchOversized() {

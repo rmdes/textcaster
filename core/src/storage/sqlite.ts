@@ -43,6 +43,10 @@ export class SqliteRepository implements Repository {
       .execute()
     return (result?.numInsertedOrUpdatedRows ?? 0n) > 0n
   }
+  async hasPostsByAuthor(authorId: string) {
+    const r = await this.db.selectFrom('posts').select('id').where('author_id', '=', authorId).executeTakeFirst()
+    return r !== undefined
+  }
   async getTimeline(limit: number): Promise<TimelineEntry[]> {
     const rows = await this.db
       .selectFrom('posts')

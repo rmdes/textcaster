@@ -7,5 +7,6 @@ export interface Repository {
   getUserByHandle(handle: string): Promise<User | undefined>
   listRemoteUsers(): Promise<User[]>
   insertPost(p: Post): Promise<boolean>
+  hasPostsByAuthor(authorId: string): Promise<boolean>
   getTimeline(limit: number): Promise<TimelineEntry[]>
 }
