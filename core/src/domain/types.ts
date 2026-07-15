@@ -17,6 +17,7 @@ export interface Post {
   authorId: string
   source: PostSource
   guid: string
+  title: string | null
   content: string
   url: string | null
   publishedAt: string

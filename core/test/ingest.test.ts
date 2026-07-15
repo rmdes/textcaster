@@ -29,7 +29,8 @@ test('ingests RSS items as remote posts, once (idempotent), and emits new ones',
   const tl = await repo.getTimeline(10)
   expect(tl[0].source).toBe('remote')
   expect(tl[0].author.handle).toBe('news')
-  expect(tl[0].content).toContain('Hello')
+  expect(tl[0].title).toBe('Hello')
+  expect(tl[0].content).toBe('Body one')
 })
 
 test('parses JSON Feed items too', async () => {
@@ -41,6 +42,8 @@ test('parses JSON Feed items too', async () => {
   expect(n).toBe(1)
   const tl = await repo.getTimeline(10)
   expect(tl[0].guid).toBe('a1')
+  expect(tl[0].title).toBe('JF One')
+  expect(tl[0].content).toBe('jf body')
 })
 
 function fakeFetchOversized() {

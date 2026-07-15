@@ -5,7 +5,7 @@ import type { Repository } from '../domain/repository.ts'
 import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry } from '../domain/types.ts'
 
 interface UsersTable { id: string; kind: 'local' | 'remote'; handle: string; display_name: string; feed_url: string | null; created_at: string }
-interface PostsTable { id: string; author_id: string; source: 'local' | 'remote'; guid: string; content: string; url: string | null; published_at: string; created_at: string }
+interface PostsTable { id: string; author_id: string; source: 'local' | 'remote'; guid: string; title: string | null; content: string; url: string | null; published_at: string; created_at: string }
 interface DB { users: UsersTable; posts: PostsTable }
 
 function rowToUser(r: UsersTable): User {
@@ -36,7 +36,7 @@ export class SqliteRepository implements Repository {
     return rs.map(rowToUser)
   }
   async insertPost(p: Post) {
-    await this.db.insertInto('posts').values({ id: p.id, author_id: p.authorId, source: p.source, guid: p.guid, content: p.content, url: p.url, published_at: p.publishedAt, created_at: p.createdAt }).execute()
+    await this.db.insertInto('posts').values({ id: p.id, author_id: p.authorId, source: p.source, guid: p.guid, title: p.title, content: p.content, url: p.url, published_at: p.publishedAt, created_at: p.createdAt }).execute()
   }
   async hasPostGuid(guid: string) {
     const r = await this.db.selectFrom('posts').select('id').where('guid', '=', guid).executeTakeFirst()
@@ -53,7 +53,7 @@ export class SqliteRepository implements Repository {
       .limit(limit)
       .execute()
     return rows.map((r) => ({
-      id: r.id, authorId: r.author_id, source: r.source, guid: r.guid, content: r.content, url: r.url, publishedAt: r.published_at, createdAt: r.created_at,
+      id: r.id, authorId: r.author_id, source: r.source, guid: r.guid, title: r.title, content: r.content, url: r.url, publishedAt: r.published_at, createdAt: r.created_at,
       author: { id: r.u_id, kind: r.u_kind, handle: r.u_handle, displayName: r.u_display_name, feedUrl: r.u_feed_url, createdAt: r.u_created_at },
     }))
   }
@@ -74,6 +74,7 @@ export async function createSqliteRepository(filename: string): Promise<SqliteRe
     .addColumn('author_id', 'text', (c) => c.notNull().references('users.id'))
     .addColumn('source', 'text', (c) => c.notNull())
     .addColumn('guid', 'text', (c) => c.notNull().unique())
+    .addColumn('title', 'text')
     .addColumn('content', 'text', (c) => c.notNull())
     .addColumn('url', 'text')
     .addColumn('published_at', 'text', (c) => c.notNull())

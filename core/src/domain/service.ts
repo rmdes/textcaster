@@ -21,7 +21,7 @@ export function createService(repo: Repository, bus: EventBus) {
     async createLocalPostAs(handle: string, displayName: string, content: string): Promise<TimelineEntry> {
       const author = await ensureLocalUser(handle, displayName)
       const now = new Date().toISOString()
-      const post: Post = { id: randomUUID(), authorId: author.id, source: 'local', guid: randomUUID(), content, url: null, publishedAt: now, createdAt: now }
+      const post: Post = { id: randomUUID(), authorId: author.id, source: 'local', guid: randomUUID(), title: null, content, url: null, publishedAt: now, createdAt: now }
       await repo.insertPost(post)
       const entry: TimelineEntry = { ...post, author }
       bus.emitNewPost(entry)

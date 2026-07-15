@@ -30,6 +30,7 @@ test('POST /posts then GET /timeline shows the post', async () => {
   const tl = await app.request('/timeline')
   const body = await tl.json()
   expect(body.timeline[0].content).toBe('hi there')
+  expect(body.timeline[0].title).toBeNull()
 })
 
 test('POST /users adds a remote user', async () => {

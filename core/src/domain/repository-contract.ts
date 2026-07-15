@@ -31,18 +31,20 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
     test('inserts posts and returns a newest-first timeline with authors', async () => {
       const repo = await makeRepo()
       const a = await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
-      await repo.insertPost({ id: 'p1', authorId: a.id, source: 'local', guid: 'g1', content: 'first', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
-      await repo.insertPost({ id: 'p2', authorId: a.id, source: 'local', guid: 'g2', content: 'second', url: null, publishedAt: '2026-01-02T00:00:00.000Z', createdAt: '2026-01-02T00:00:00.000Z' })
+      await repo.insertPost({ id: 'p1', authorId: a.id, source: 'local', guid: 'g1', title: null, content: 'first', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+      await repo.insertPost({ id: 'p2', authorId: a.id, source: 'local', guid: 'g2', title: 'Second title', content: 'second', url: null, publishedAt: '2026-01-02T00:00:00.000Z', createdAt: '2026-01-02T00:00:00.000Z' })
       const tl = await repo.getTimeline(10)
       expect(tl.map((e) => e.id)).toEqual(['p2', 'p1'])
       expect(tl[0].author.handle).toBe('alice')
+      expect(tl[0].title).toBe('Second title')
+      expect(tl[1].title).toBeNull()
     })
 
     test('hasPostGuid detects duplicates for idempotent ingestion', async () => {
       const repo = await makeRepo()
       const a = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
       expect(await repo.hasPostGuid('g1')).toBe(false)
-      await repo.insertPost({ id: 'p1', authorId: a.id, source: 'remote', guid: 'g1', content: 'x', url: 'https://ex.com/1', publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+      await repo.insertPost({ id: 'p1', authorId: a.id, source: 'remote', guid: 'g1', title: null, content: 'x', url: 'https://ex.com/1', publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
       expect(await repo.hasPostGuid('g1')).toBe(true)
     })
   })

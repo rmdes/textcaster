@@ -4,7 +4,7 @@ import type { Repository } from './repository.ts'
 import type { EventBus } from './bus.ts'
 import type { User, Post } from './types.ts'
 
-export interface ParsedItem { guid: string; content: string; url: string | null; publishedAt: string }
+export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string }
 
 const rss = new Parser()
 
@@ -16,21 +16,22 @@ export async function parseFeed(body: string, contentType: string): Promise<Pars
   if (contentType.includes('json')) {
     const feed = JSON.parse(body) as { items?: Array<Record<string, unknown>> }
     return (feed.items ?? []).map((it) => {
-      const title = typeof it.title === 'string' ? it.title : ''
+      const title = typeof it.title === 'string' ? it.title : null
       const text = typeof it.content_text === 'string' ? it.content_text : typeof it.content_html === 'string' ? it.content_html : ''
       const url = typeof it.url === 'string' ? it.url : null
       const guid = typeof it.id === 'string' ? it.id : url ?? randomUUID()
       const date = typeof it.date_published === 'string' ? new Date(it.date_published).toISOString() : now
-      return { guid, content: [title, text].filter(Boolean).join(' — '), url, publishedAt: date }
+      return { guid, title, content: text, url, publishedAt: date }
     })
   }
   const feed = await rss.parseString(body)
   return (feed.items ?? []).map((it) => {
     const url = it.link ?? null
     const guid = it.guid ?? url ?? randomUUID()
+    const title = it.title ?? null
     const text = it.contentSnippet ?? it.content ?? ''
     const date = it.isoDate ? new Date(it.isoDate).toISOString() : now
-    return { guid, content: [it.title, text].filter(Boolean).join(' — '), url, publishedAt: date }
+    return { guid, title, content: text, url, publishedAt: date }
   })
 }
 
@@ -47,7 +48,7 @@ export async function ingestRemoteUser(repo: Repository, bus: EventBus, user: Us
   for (const item of items) {
     if (await repo.hasPostGuid(item.guid)) continue
     const now = new Date().toISOString()
-    const post: Post = { id: randomUUID(), authorId: user.id, source: 'remote', guid: item.guid, content: item.content, url: item.url, publishedAt: item.publishedAt, createdAt: now }
+    const post: Post = { id: randomUUID(), authorId: user.id, source: 'remote', guid: item.guid, title: item.title, content: item.content, url: item.url, publishedAt: item.publishedAt, createdAt: now }
     await repo.insertPost(post)
     bus.emitNewPost({ ...post, author: user })
     inserted++
