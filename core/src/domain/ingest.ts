@@ -13,7 +13,7 @@ const rss = new Parser()
 // never the defaulted "now" — so an item with no date doesn't get a fresh
 // guid, and thus re-insert as a new post, on every poll.
 function fallbackGuid(title: string | null, content: string, rawDate: string): string {
-  return createHash('sha256').update((title ?? '') + content + rawDate).digest('hex')
+  return createHash('sha256').update((title ?? '') + '\0' + content + '\0' + rawDate).digest('hex')
 }
 
 const FETCH_TIMEOUT_MS = 10_000
@@ -32,10 +32,11 @@ function toIsoOrNow(raw: string, now: string): string {
   return Number.isNaN(d.getTime()) ? now : d.toISOString()
 }
 
-export async function parseFeed(body: string, contentType: string): Promise<ParsedItem[]> {
+export async function parseFeed(body: string, _contentType: string): Promise<ParsedItem[]> {
+  const cleanBody = body.charCodeAt(0) === 0xfeff ? body.slice(1) : body
   const now = new Date().toISOString()
-  if (contentType.includes('json') || looksLikeJson(body)) {
-    const feed = JSON.parse(body) as { items?: Array<Record<string, unknown>> }
+  if (looksLikeJson(cleanBody)) {
+    const feed = JSON.parse(cleanBody) as { items?: Array<Record<string, unknown>> }
     return (feed.items ?? []).map((it) => {
       const title = typeof it.title === 'string' ? it.title : null
       const text = typeof it.content_text === 'string' ? it.content_text : typeof it.content_html === 'string' ? it.content_html : ''
@@ -46,7 +47,7 @@ export async function parseFeed(body: string, contentType: string): Promise<Pars
       return { guid, title, content: text, url, publishedAt: date }
     })
   }
-  const feed = await rss.parseString(body)
+  const feed = await rss.parseString(cleanBody)
   return (feed.items ?? []).map((it) => {
     const url = it.link ?? null
     const title = it.title ?? null

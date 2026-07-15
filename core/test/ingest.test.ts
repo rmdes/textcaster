@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest'
 import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
-import { ingestRemoteUser, pollAll } from '../src/domain/ingest.ts'
+import { ingestRemoteUser, pollAll, parseFeed } from '../src/domain/ingest.ts'
 
 const RSS = `<?xml version="1.0"?><rss version="2.0"><channel><title>News</title>
 <item><title>Hello</title><link>https://ex.com/1</link><guid>https://ex.com/1</guid><description>Body one</description><pubDate>Wed, 01 Jan 2026 00:00:00 GMT</pubDate></item>
@@ -198,4 +198,42 @@ test('pollAll swallows an oversized feed and leaves the timeline unchanged', asy
   await pollAll(repo, bus, fakeFetchOversized())
   const tl = await repo.getTimeline(10)
   expect(tl).toEqual([])
+})
+
+test('fallback guids for (ab,c) and (a,bc) do not collide', async () => {
+  const json = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [
+    { title: 'ab', content_text: 'c' },
+    { title: 'a', content_text: 'bc' },
+  ] })
+  const items = await parseFeed(json, 'application/feed+json')
+  expect(items[0].guid).not.toBe(items[1].guid)
+})
+
+test('an XML feed mislabeled as JSON still parses as RSS', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'mislabeled', displayName: 'M', feedUrl: 'https://ex.com/f' })
+  const n = await ingestRemoteUser(repo, bus, user, fakeFetch(RSS, 'application/json'))
+  expect(n).toBe(1)
+})
+
+test('a BOM-prefixed JSON Feed served as text/plain parses as JSON Feed', async () => {
+  const json = '﻿' + JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [{ id: 'bom1', content_text: 'bom body' }] })
+  const items = await parseFeed(json, 'text/plain')
+  expect(items[0].guid).toBe('bom1')
+})
+
+test('backfill stays silent when the first sync was empty (pin, not a change)', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'slowstart', displayName: 'S', feedUrl: 'https://ex.com/f.json' })
+  const seen = vi.fn()
+  bus.onNewPost(seen)
+  const empty = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [] })
+  expect(await ingestRemoteUser(repo, bus, user, fakeFetch(empty, 'application/feed+json'))).toBe(0)
+  const two = JSON.stringify({ version: 'https://jsonfeed.org/version/1.1', items: [
+    { id: 's1', content_text: 'one' }, { id: 's2', content_text: 'two' },
+  ] })
+  expect(await ingestRemoteUser(repo, bus, user, fakeFetch(two, 'application/feed+json'))).toBe(2)
+  expect(seen).toHaveBeenCalledTimes(0) // still backfill: nothing was ever live-visible
 })

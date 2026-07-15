@@ -123,3 +123,10 @@ test('timeline rejects a non-integer limit and clamps out-of-range limits', asyn
   expect((await app.request('/timeline?limit=0')).status).toBe(200) // clamped to 1
   expect((await app.request('/timeline?limit=5000')).status).toBe(200) // clamped to 100
 })
+
+test('a blank displayName falls back to the handle', async () => {
+  const app = await makeApp()
+  await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'alice', displayName: '   ', content: 'hi' }) })
+  const body = await (await app.request('/timeline')).json()
+  expect(body.timeline[0].author.displayName).toBe('alice')
+})

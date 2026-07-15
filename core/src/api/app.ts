@@ -50,7 +50,8 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     if (!isString(handle, 1, 64)) return c.json({ error: 'handle invalid' }, 400)
     if (displayName !== undefined && !isString(displayName, 0, 200)) return c.json({ error: 'displayName invalid' }, 400)
     if (!isString(feedUrl, 1, 2048) || !isValidFeedUrl(feedUrl)) return c.json({ error: 'feedUrl invalid' }, 400)
-    const user = await service.addRemoteUser({ handle, displayName: displayName ?? handle, feedUrl })
+    const effectiveDisplayName = typeof displayName === 'string' && displayName.trim() !== '' ? displayName : handle
+    const user = await service.addRemoteUser({ handle, displayName: effectiveDisplayName, feedUrl })
     return c.json({ user }, 201)
   })
 
@@ -61,7 +62,8 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     if (!isString(handle, 1, 64)) return c.json({ error: 'handle invalid' }, 400)
     if (displayName !== undefined && !isString(displayName, 0, 200)) return c.json({ error: 'displayName invalid' }, 400)
     if (!isString(content, 1, 100000)) return c.json({ error: 'content invalid' }, 400)
-    const post = await service.createLocalPostAs(handle, displayName ?? handle, content)
+    const effectiveDisplayName = typeof displayName === 'string' && displayName.trim() !== '' ? displayName : handle
+    const post = await service.createLocalPostAs(handle, effectiveDisplayName, content)
     return c.json({ post }, 201)
   })
 
