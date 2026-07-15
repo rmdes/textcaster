@@ -6,7 +6,6 @@ export interface Repository {
   getUser(id: string): Promise<User | undefined>
   getUserByHandle(handle: string): Promise<User | undefined>
   listRemoteUsers(): Promise<User[]>
-  insertPost(p: Post): Promise<void>
-  hasPostGuid(guid: string): Promise<boolean>
+  insertPost(p: Post): Promise<boolean>
   getTimeline(limit: number): Promise<TimelineEntry[]>
 }

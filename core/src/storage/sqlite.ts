@@ -36,11 +36,12 @@ export class SqliteRepository implements Repository {
     return rs.map(rowToUser)
   }
   async insertPost(p: Post) {
-    await this.db.insertInto('posts').values({ id: p.id, author_id: p.authorId, source: p.source, guid: p.guid, title: p.title, content: p.content, url: p.url, published_at: p.publishedAt, created_at: p.createdAt }).execute()
-  }
-  async hasPostGuid(guid: string) {
-    const r = await this.db.selectFrom('posts').select('id').where('guid', '=', guid).executeTakeFirst()
-    return r !== undefined
+    const [result] = await this.db
+      .insertInto('posts')
+      .values({ id: p.id, author_id: p.authorId, source: p.source, guid: p.guid, title: p.title, content: p.content, url: p.url, published_at: p.publishedAt, created_at: p.createdAt })
+      .onConflict((oc) => oc.doNothing())
+      .execute()
+    return (result?.numInsertedOrUpdatedRows ?? 0n) > 0n
   }
   async getTimeline(limit: number): Promise<TimelineEntry[]> {
     const rows = await this.db
@@ -73,12 +74,13 @@ export async function createSqliteRepository(filename: string): Promise<SqliteRe
     .addColumn('id', 'text', (c) => c.primaryKey())
     .addColumn('author_id', 'text', (c) => c.notNull().references('users.id'))
     .addColumn('source', 'text', (c) => c.notNull())
-    .addColumn('guid', 'text', (c) => c.notNull().unique())
+    .addColumn('guid', 'text', (c) => c.notNull())
     .addColumn('title', 'text')
     .addColumn('content', 'text', (c) => c.notNull())
     .addColumn('url', 'text')
     .addColumn('published_at', 'text', (c) => c.notNull())
     .addColumn('created_at', 'text', (c) => c.notNull())
+    .addUniqueConstraint('posts_author_guid_uq', ['author_id', 'guid'])
     .execute()
   await db.schema.createIndex('posts_published_idx').ifNotExists().on('posts').column('published_at').execute()
   return new SqliteRepository(db)

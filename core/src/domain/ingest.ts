@@ -46,12 +46,12 @@ export async function ingestRemoteUser(repo: Repository, bus: EventBus, user: Us
   const items = await parseFeed(body, contentType)
   let inserted = 0
   for (const item of items) {
-    if (await repo.hasPostGuid(item.guid)) continue
     const now = new Date().toISOString()
     const post: Post = { id: randomUUID(), authorId: user.id, source: 'remote', guid: item.guid, title: item.title, content: item.content, url: item.url, publishedAt: item.publishedAt, createdAt: now }
-    await repo.insertPost(post)
-    bus.emitNewPost({ ...post, author: user })
-    inserted++
+    if (await repo.insertPost(post)) {
+      bus.emitNewPost({ ...post, author: user })
+      inserted++
+    }
   }
   return inserted
 }

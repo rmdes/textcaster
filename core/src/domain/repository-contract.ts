@@ -40,12 +40,24 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       expect(tl[1].title).toBeNull()
     })
 
-    test('hasPostGuid detects duplicates for idempotent ingestion', async () => {
+    test('insertPost returns false and does not duplicate on a repeat (author_id, guid) pair', async () => {
       const repo = await makeRepo()
       const a = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
-      expect(await repo.hasPostGuid('g1')).toBe(false)
-      await repo.insertPost({ id: 'p1', authorId: a.id, source: 'remote', guid: 'g1', title: null, content: 'x', url: 'https://ex.com/1', publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
-      expect(await repo.hasPostGuid('g1')).toBe(true)
+      const post = { id: 'p1', authorId: a.id, source: 'remote' as const, guid: 'g1', title: null, content: 'x', url: 'https://ex.com/1', publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' }
+      expect(await repo.insertPost(post)).toBe(true)
+      expect(await repo.insertPost({ ...post, id: 'p1-dup' })).toBe(false)
+      const tl = await repo.getTimeline(10)
+      expect(tl.filter((e) => e.guid === 'g1')).toHaveLength(1)
+    })
+
+    test('insertPost allows the same guid under a different author', async () => {
+      const repo = await makeRepo()
+      const a = await repo.createRemoteUser({ handle: 'news-a', displayName: 'News A', feedUrl: 'https://ex.com/a.xml' })
+      const b = await repo.createRemoteUser({ handle: 'news-b', displayName: 'News B', feedUrl: 'https://ex.com/b.xml' })
+      expect(await repo.insertPost({ id: 'pa', authorId: a.id, source: 'remote', guid: 'shared-guid', title: null, content: 'x', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })).toBe(true)
+      expect(await repo.insertPost({ id: 'pb', authorId: b.id, source: 'remote', guid: 'shared-guid', title: null, content: 'y', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })).toBe(true)
+      const tl = await repo.getTimeline(10)
+      expect(tl.filter((e) => e.guid === 'shared-guid')).toHaveLength(2)
     })
   })
 }
