@@ -25,7 +25,10 @@ export function createService(repo: Repository, bus: EventBus) {
 
   return {
     async addRemoteUser(input: NewRemoteUser) {
-      return repo.createRemoteUser({ ...input, handle: normalizeHandle(input.handle) })
+      const handle = normalizeHandle(input.handle)
+      // ponytail: TOCTOU race between this check and the insert below is acceptable at spine scale.
+      if (await repo.getUserByHandle(handle)) throw new DomainError('handle already taken')
+      return repo.createRemoteUser({ ...input, handle })
     },
     async createLocalPostAs(handle: string, displayName: string, content: string): Promise<TimelineEntry> {
       const author = await ensureLocalUser(handle, displayName)

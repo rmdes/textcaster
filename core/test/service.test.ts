@@ -36,3 +36,9 @@ test('addRemoteUser rejects a handle with invalid characters', async () => {
   const { svc } = await setup()
   await expect(svc.addRemoteUser({ handle: 'Bad Handle!', displayName: 'Bad', feedUrl: 'https://ex.com/f.xml' })).rejects.toThrow(DomainError)
 })
+
+test('addRemoteUser rejects a handle that is already taken', async () => {
+  const { svc } = await setup()
+  await svc.addRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
+  await expect(svc.addRemoteUser({ handle: 'news', displayName: 'News Again', feedUrl: 'https://ex.com/g.xml' })).rejects.toThrow(DomainError)
+})
