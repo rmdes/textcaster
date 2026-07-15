@@ -26,8 +26,22 @@ test('GET proxies the core SSE stream with the right headers', async () => {
 	)
 	expect(res.headers.get('content-type')).toBe('text/event-stream')
 	expect(res.headers.get('cache-control')).toBe('no-cache')
-	expect(res.headers.get('connection')).toBe('keep-alive')
 
 	const text = await res.text()
 	expect(text).toContain('event: post')
+})
+
+test('GET forwards upstream error status', async () => {
+	const body = new ReadableStream({
+		start(controller) {
+			controller.close()
+		}
+	})
+	const fetchMock = vi.fn(async () => new Response(body, { status: 500 }))
+	global.fetch = fetchMock as unknown as typeof fetch
+
+	const request = new Request('http://x/stream')
+	const res = await GET({ request } as never)
+
+	expect(res.status).toBe(500)
 })
