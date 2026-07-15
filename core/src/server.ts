@@ -35,6 +35,8 @@ const app = createApp({
     ? {
         websubVerify: (token: string, query: Record<string, string>) => pushIn.handleWebSubVerification(token, query),
         websubDeliver: (token: string, body: string, signature: string | null) => pushIn.handleFatPing(token, body, signature, { bus }),
+        rsscloudChallenge: (url: string, challenge: string) => pushIn.handleRssCloudChallenge(url, challenge),
+        rsscloudPing: (url: string) => pushIn.handleThinPing(url, { bus }),
       }
     : undefined,
 })

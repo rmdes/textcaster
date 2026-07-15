@@ -147,6 +147,20 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.json({ ok: status === 202 }, status as 202 | 404)
   })
 
+  app.get('/rsscloud/notify', async (c) => {
+    if (!deps.pushInApi?.rsscloudChallenge) return c.json({ error: 'not found' }, 404)
+    const r = await deps.pushInApi.rsscloudChallenge(c.req.query('url') ?? '', c.req.query('challenge') ?? '')
+    return c.text(r.body, r.status as 200 | 404)
+  })
+
+  app.post('/rsscloud/notify', async (c) => {
+    if (!deps.pushInApi?.rsscloudPing) return c.json({ error: 'not found' }, 404)
+    const parsed = await c.req.parseBody()
+    const url = typeof parsed.url === 'string' ? parsed.url : ''
+    const status = await deps.pushInApi.rsscloudPing(url)
+    return c.json({ ok: true }, status as 200)
+  })
+
   app.get('/timeline', async (c) => {
     const beforeRaw = c.req.query('before')
     let before

@@ -157,3 +157,9 @@ test('fat-ping route enforces the 5MB body cap before delivery', async () => {
   expect(res.status).toBe(413)
   expect(deliver).not.toHaveBeenCalled()
 })
+
+test('rsscloud notify routes are 404 when pushInApi is not wired', async () => {
+  const app = await makeApp()
+  expect((await app.request('/rsscloud/notify?url=x&challenge=y')).status).toBe(404)
+  expect((await app.request('/rsscloud/notify', { method: 'POST', body: new URLSearchParams({ url: 'x' }) })).status).toBe(404)
+})

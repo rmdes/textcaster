@@ -53,6 +53,8 @@ export interface PushIn {
   hasActivePush(userId: string): Promise<boolean>
   handleWebSubVerification(token: string, query: Record<string, string>): Promise<{ status: number; body: string }>
   handleFatPing(token: string, body: string, signatureHeader: string | null, io: { bus: EventBus }): Promise<number>
+  handleRssCloudChallenge(url: string, challenge: string): Promise<{ status: number; body: string }>
+  handleThinPing(url: string, io: { bus: EventBus }): Promise<number>
 }
 
 export interface PushInDeps {
@@ -65,6 +67,9 @@ export interface PushInDeps {
 export function createPushIn(deps: PushInDeps): PushIn {
   const { repo, config } = deps
   const fetchFn = deps.fetchFn ?? fetch
+  // H5: in-memory floor — a ping storm costs the attacker requests and us nothing.
+  const lastThinFetch = new Map<string, number>()
+  const THIN_PING_FLOOR_MS = 30_000
 
   // R1 (spec §4.2): the stored row's token/secret are the subscription's
   // identity — generate ONLY when no (user, mode) row exists at all.
@@ -203,6 +208,27 @@ export function createPushIn(deps: PushInDeps): PushIn {
         console.error(`fat ping ingest failed for ${sub.topic}:`, err instanceof Error ? err.message : err)
       }
       return 202
+    },
+    async handleRssCloudChallenge(url: string, challenge: string): Promise<{ status: number; body: string }> {
+      const sub = await repo.findPushSubscription({ mode: 'rsscloud', topic: url })
+      if (!sub) return { status: 404, body: 'unknown' }
+      return { status: 200, body: `confirming ${challenge}` }
+    },
+    async handleThinPing(url: string, io: { bus: EventBus }): Promise<number> {
+      try {
+        const sub = await repo.findPushSubscription({ mode: 'rsscloud', topic: url }, { unexpiredAt: new Date().toISOString() })
+        if (!sub) return 200 // unknown topic: 200 no-op — no subscription-list oracle
+        const last = lastThinFetch.get(url) ?? 0
+        if (Date.now() - last < THIN_PING_FLOOR_MS) return 200 // H5 floor
+        lastThinFetch.set(url, Date.now())
+        const user = await repo.getUser(sub.userId)
+        if (!user) return 200
+        // The ping's content is only a lookup key; we re-fetch OUR stored feedUrl.
+        await ingestRemoteUser(repo, io.bus, user, fetchFn)
+      } catch (err) {
+        console.error(`thin ping ingest failed for ${url}:`, err instanceof Error ? err.message : err)
+      }
+      return 200
     },
   }
 }

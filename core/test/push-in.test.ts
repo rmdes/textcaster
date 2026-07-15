@@ -200,3 +200,37 @@ test('fat ping with a valid signature ingests and emits; invalid → 202 discard
   expect(await pushIn.handleFatPing('tok-f', feedBody, null, { bus })).toBe(202) // missing sig: same
   expect(await pushIn.handleFatPing('unknown-token', feedBody, goodSig, { bus })).toBe(404)
 })
+
+async function rsscloudSetup() {
+  const { repo, bus, config } = await pushInSetup()
+  const u = await repo.createRemoteUser({ handle: 'cloudy', displayName: 'C', feedUrl: 'https://cloudy.example.com/rss.xml' })
+  await repo.upsertPushSubscription({ id: 'rc9', userId: u.id, mode: 'rsscloud', endpoint: 'http://cloudy.example.com:5337/rsscloud/pleaseNotify', topic: 'https://cloudy.example.com/rss.xml', callbackToken: 'tok-rc9', secret: null, state: 'active', expiresAt: new Date(Date.now() + 86400000).toISOString(), createdAt: '2026-01-01T00:00:00.000Z' })
+  return { repo, bus, config, user: u }
+}
+
+test('rsscloud challenge echoes only for known topics', async () => {
+  const { repo, config } = await rsscloudSetup()
+  const pushIn = createPushIn({ repo, config, lookupFn: publicLookup })
+  const r = await pushIn.handleRssCloudChallenge('https://cloudy.example.com/rss.xml', 'chz-1')
+  expect(r.status).toBe(200)
+  expect(r.body).toContain('chz-1')
+  expect((await pushIn.handleRssCloudChallenge('https://unknown.example.com/x', 'chz-2')).status).toBe(404)
+})
+
+test('thin ping re-fetches the STORED feedUrl once per 30s floor (H5)', async () => {
+  const { repo, bus, config } = await rsscloudSetup()
+  const rss = '<?xml version="1.0"?><rss version="2.0"><channel><title>C</title><link>https://c</link><description>d</description><item><guid>tp-1</guid><description>thin pinged</description></item></channel></rss>'
+  const fetched: string[] = []
+  const fetchFn = vi.fn(async (url: string | URL | Request) => { fetched.push(String(url)); return new Response(rss, { headers: { 'content-type': 'application/rss+xml' } }) })
+  const pushIn = createPushIn({ repo, config, fetchFn: fetchFn as unknown as typeof fetch, lookupFn: publicLookup })
+
+  expect(await pushIn.handleThinPing('https://cloudy.example.com/rss.xml', { bus })).toBe(200)
+  await vi.waitFor(() => expect(fetched).toEqual(['https://cloudy.example.com/rss.xml'])) // stored feedUrl, not the ping url
+  await vi.waitFor(async () => expect((await repo.getTimeline(10)).map((e) => e.guid)).toContain('tp-1'))
+
+  expect(await pushIn.handleThinPing('https://cloudy.example.com/rss.xml', { bus })).toBe(200) // within 30s → coalesced
+  expect(fetched.length).toBe(1)
+
+  expect(await pushIn.handleThinPing('https://never-subscribed.example.com/x', { bus })).toBe(200) // unknown: 200 no-op, no oracle
+  expect(fetched.length).toBe(1)
+})
