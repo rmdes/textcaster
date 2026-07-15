@@ -223,8 +223,11 @@ export function createPushIn(deps: PushInDeps): PushIn {
         lastThinFetch.set(url, Date.now())
         const user = await repo.getUser(sub.userId)
         if (!user) return 200
-        // The ping's content is only a lookup key; we re-fetch OUR stored feedUrl.
-        await ingestRemoteUser(repo, io.bus, user, fetchFn)
+        // Fire-and-forget: response latency must not distinguish subscribed
+        // topics from unknown ones (timing side of the no-oracle rule).
+        void ingestRemoteUser(repo, io.bus, user, fetchFn).catch((err) => {
+          console.error(`thin ping ingest failed for ${url}:`, err instanceof Error ? err.message : err)
+        })
       } catch (err) {
         console.error(`thin ping ingest failed for ${url}:`, err instanceof Error ? err.message : err)
       }
