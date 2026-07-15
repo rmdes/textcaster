@@ -94,6 +94,10 @@ sha1/sha256/sha384/sha512 — invalid pings are discarded silently) and
 `GET|POST /rsscloud/notify` (thin pings only trigger a re-fetch of the
 already-stored feed URL, floored at once per 30 seconds per feed).
 
+The rssCloud `<cloud>` element has no scheme field, so an https instance
+registering on a non-443 public port still advertises an `http` callback;
+serve push on `:443` when running behind https.
+
 ## Stale DB warning
 
 **Schema changes are now migration-gated.** Core refuses to start against a

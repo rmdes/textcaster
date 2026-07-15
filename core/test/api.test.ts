@@ -163,3 +163,15 @@ test('rsscloud notify routes are 404 when pushInApi is not wired', async () => {
   expect((await app.request('/rsscloud/notify?url=x&challenge=y')).status).toBe(404)
   expect((await app.request('/rsscloud/notify', { method: 'POST', body: new URLSearchParams({ url: 'x' }) })).status).toBe(404)
 })
+
+test('rsscloud notify route enforces the 64KB form body cap', async () => {
+  const ping = vi.fn(async () => 200)
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const service = createService(repo, bus)
+  const app = createApp({ service, bus, token: 'secret', pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: async () => 202, rsscloudPing: ping } })
+  const big = new URLSearchParams({ url: 'x'.repeat(64 * 1024 + 1) })
+  const res = await app.request('/rsscloud/notify', { method: 'POST', body: big })
+  expect(res.status).toBe(413)
+  expect(ping).not.toHaveBeenCalled()
+})

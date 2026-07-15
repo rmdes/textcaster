@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import { bodyLimit } from 'hono/body-limit'
 import { bearerAuth } from './auth.ts'
 import { parseCursor, formatCursor } from './cursor.ts'
 import { DomainError } from '../domain/types.ts'
@@ -46,6 +47,8 @@ export interface PushInApi {
 }
 
 const MAX_FAT_PING_BYTES = 5 * 1024 * 1024
+const MAX_FORM_BYTES = 64 * 1024
+const rejectOversized = (c: Context) => c.text('payload too large', 413)
 
 export function createApp(deps: { service: Service; bus: EventBus; token: string; feeds?: FeedContext; pushApi?: PushApi; pushInApi?: PushInApi }): Hono {
   const { service, bus, token } = deps
@@ -112,7 +115,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.body(renderJsonFeed(r.user, posts, feeds), 200, { 'content-type': 'application/feed+json; charset=utf-8' })
   })
 
-  app.post('/hub', async (c) => {
+  app.post('/hub', bodyLimit({ maxSize: MAX_FORM_BYTES, onError: rejectOversized }), async (c) => {
     if (!deps.pushApi?.websub) return c.json({ error: 'not found' }, 404)
     const parsed = await c.req.parseBody()
     const form = Object.fromEntries(Object.entries(parsed).filter(([, v]) => typeof v === 'string')) as Record<string, string>
@@ -120,7 +123,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.json(result.error ? { error: result.error } : { ok: true }, result.status)
   })
 
-  app.post('/rsscloud/pleaseNotify', async (c) => {
+  app.post('/rsscloud/pleaseNotify', bodyLimit({ maxSize: MAX_FORM_BYTES, onError: rejectOversized }), async (c) => {
     if (!deps.pushApi?.rsscloud) return c.json({ error: 'not found' }, 404)
     const parsed = await c.req.parseBody()
     const form = Object.fromEntries(Object.entries(parsed).filter(([, v]) => typeof v === 'string')) as Record<string, string>
@@ -137,12 +140,9 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.text(r.body, r.status as 200 | 404)
   })
 
-  app.post('/websub/callback/:token', async (c) => {
+  app.post('/websub/callback/:token', bodyLimit({ maxSize: MAX_FAT_PING_BYTES, onError: rejectOversized }), async (c) => {
     if (!deps.pushInApi) return c.json({ error: 'not found' }, 404)
-    const contentLength = Number(c.req.header('content-length') ?? '0')
-    if (contentLength > MAX_FAT_PING_BYTES) return c.json({ error: 'too large' }, 413)
     const body = await c.req.text()
-    if (Buffer.byteLength(body) > MAX_FAT_PING_BYTES) return c.json({ error: 'too large' }, 413)
     const status = await deps.pushInApi.websubDeliver(c.req.param('token') ?? '', body, c.req.header('x-hub-signature') ?? null)
     return c.json({ ok: status === 202 }, status as 202 | 404)
   })
@@ -153,7 +153,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.text(r.body, r.status as 200 | 404)
   })
 
-  app.post('/rsscloud/notify', async (c) => {
+  app.post('/rsscloud/notify', bodyLimit({ maxSize: MAX_FORM_BYTES, onError: rejectOversized }), async (c) => {
     if (!deps.pushInApi?.rsscloudPing) return c.json({ error: 'not found' }, 404)
     const parsed = await c.req.parseBody()
     const url = typeof parsed.url === 'string' ? parsed.url : ''

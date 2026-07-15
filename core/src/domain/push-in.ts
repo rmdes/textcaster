@@ -189,7 +189,7 @@ export function createPushIn(deps: PushInDeps): PushIn {
         await repo.deletePushSubscription(sub.id)
         return { status: 200, body: 'ok' }
       }
-      if (query['hub.mode'] !== 'subscribe' || !query['hub.challenge']) return { status: 404, body: 'bad verification' }
+      if (query['hub.mode'] !== 'subscribe' || !query['hub.challenge']) return { status: 404, body: 'unknown subscription' }
       const granted = Number(query['hub.lease_seconds'])
       const leaseSeconds = Number.isInteger(granted) && granted > 0 ? granted : WEBSUB_LEASE_SECONDS
       await repo.upsertPushSubscription({ ...sub, state: 'active', expiresAt: new Date(Date.now() + leaseSeconds * 1000).toISOString() })
