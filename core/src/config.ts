@@ -1,4 +1,4 @@
-export interface Config { dbPath: string; token: string; port: number; pollSeconds: number; corsOrigin: string }
+export interface Config { dbPath: string; token: string; port: number; pollSeconds: number }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const token = env.TEXTCASTER_TOKEN
@@ -8,6 +8,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     token,
     port: Number(env.TEXTCASTER_PORT ?? '8787'),
     pollSeconds: Number(env.TEXTCASTER_POLL_SECONDS ?? '60'),
-    corsOrigin: env.TEXTCASTER_CORS_ORIGIN ?? 'http://localhost:5173',
   }
 }
