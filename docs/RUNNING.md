@@ -7,7 +7,8 @@ CORS to configure. Browsers only ever talk to the web app.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+ for the dev scripts (`core`'s dev script loads `.env` via
+  Node's `--env-file-if-exists`); the built server code itself runs on 20+
 - npm (workspaces are used; run all commands from the repo root)
 
 ## Install

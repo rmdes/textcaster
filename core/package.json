@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
