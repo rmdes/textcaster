@@ -58,3 +58,23 @@ test('a first post that loses the create race retries the lookup and succeeds', 
   const entry = await svc.createLocalPostAs('alice', 'Alice', 'raced post')
   expect(entry.author.handle).toBe('alice')
 })
+
+test('addFollow requires a local follower and is idempotent', async () => {
+  const { repo, svc } = await setup()
+  const alice = await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
+  const news = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
+  await svc.addFollow(alice, news)
+  await svc.addFollow(alice, news) // idempotent
+  expect((await svc.listFollowing(alice.id)).map((u) => u.handle)).toEqual(['news'])
+  await expect(svc.addFollow(news, alice)).rejects.toBeInstanceOf(DomainError) // remote follower rejected
+})
+
+test('followed lens passes the filter through', async () => {
+  const { repo, svc } = await setup()
+  const me = await repo.createLocalUser({ handle: 'me', displayName: 'Me' })
+  const x = await repo.createRemoteUser({ handle: 'x', displayName: 'X', feedUrl: 'https://ex.com/x.xml' })
+  await svc.addFollow(me, x)
+  await repo.insertPost({ id: 'x1', authorId: x.id, source: 'remote', guid: 'x1', title: null, content: 'x1', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+  const tl = await svc.getTimeline(10, undefined, { followedBy: me.id })
+  expect(tl.map((e) => e.id)).toEqual(['x1'])
+})

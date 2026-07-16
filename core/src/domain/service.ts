@@ -44,8 +44,8 @@ export function createService(repo: Repository, bus: EventBus) {
       bus.emitNewPost(entry)
       return entry
     },
-    getTimeline(limit = 100, before?: TimelineCursor) {
-      return repo.getTimeline(limit, before)
+    getTimeline(limit = 100, before?: TimelineCursor, filter?: { followedBy?: string; authorId?: string }) {
+      return repo.getTimeline(limit, before, filter)
     },
     getPost(id: string) {
       return repo.getPost(id)
@@ -58,6 +58,16 @@ export function createService(repo: Repository, bus: EventBus) {
     },
     getPostsByAuthor(authorId: string, limit: number) {
       return repo.getPostsByAuthor(authorId, limit)
+    },
+    async addFollow(follower: User, target: User): Promise<void> {
+      if (follower.kind !== 'local') throw new DomainError('follower must be a local user')
+      await repo.addFollow(follower.id, target.id)
+    },
+    removeFollow(followerId: string, targetId: string) {
+      return repo.removeFollow(followerId, targetId)
+    },
+    listFollowing(userId: string) {
+      return repo.listFollowing(userId)
     },
   }
 }
