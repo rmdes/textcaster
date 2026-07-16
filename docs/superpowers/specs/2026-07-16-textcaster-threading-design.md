@@ -99,13 +99,38 @@ join surfaces both on `TimelineEntry` (the web marker needs them).
 Per reply item (probed against installed feedsmith 2.9.6 — it generates
 `sourceNs` and `thr` and declares both namespaces):
 
-- `<source:inReplyTo>` — the Textcasting-native form — emitted whenever the
-  stored ref is an http(s) URL. For a non-permalink ref the docs require
-  `isPermaLink="false"`; **plan-time probe:** whether feedsmith's `sourceNs`
-  generation supports attributes. If not, guid-only refs get `thr:` only —
-  never a `source:inReplyTo` that violates its default-permalink contract.
+- `<source:inReplyTo>` — the Textcasting-native form — on every reply item.
+  Non-permalink (guid-only) refs carry `isPermaLink="false"` — **probed:
+  feedsmith 2.9.6 generates the attribute** (`sourceNs.inReplyTo:
+  { value, isPermaLink }`), so no fallback tier is needed.
 - `<thr:in-reply-to ref="<ref>" href="<ref when URL>">` — always (RFC 4685,
   the WordPress/Atom lineage; `ref` carries non-permalink ids natively).
+- `<source:comments count="<n>" feedUrl="<PUBLIC_URL>/post/<id>/comments.xml"/>`
+  on every item that has replies (modeled on rss.chat's
+  `feedItem.comments = { count, feedUrl }`, `rssnetwork.js` buildFeedItems).
+  feedsmith 2.9.6 cannot serialize this element (probed — silently dropped),
+  so it is **injected post-generation**: we generated the XML ourselves, so a
+  deterministic guid-keyed insertion before the matching `</item>` is safe
+  (~10 lines, unit-pinned against feedsmith's stable output). `ponytail:`
+  injector dies the day feedsmith's `sourceNs` types grow `comments` — swap
+  to the native key on that dep bump (ledger trigger updated accordingly).
+  Requires `PUBLIC_URL`; without it the element is omitted (same degradation
+  rule as OPML export's local outlines).
+
+### Comments feed — the conversation, pulled
+
+`GET /post/:id/comments.xml` — a **plain RSS 2.0 feed** of the post's direct
+replies, one item per reply (each with its own `source:inReplyTo` and, when
+it has replies, its own `source:comments` — Dave's threadwalker recurses
+exactly this way, `examples/threadwalker/walker.js`). Rendered on request
+like every other feed — no republish machinery (rss.chat must re-push static
+files to S3 on every reply; our counts are simply always current). Channel
+title: `Comments on "<post title or excerpt>"`. 404 unknown post. No
+`<cloud>`/hub advertisement on comments feeds in v1 — poll-only artifacts.
+
+New repo need: `countRepliesByRef(refs: string[]): Promise<Map<string, number>>`
+(one grouped query per rendered feed page for the `count` attributes) — the
+comments feed itself reuses the reply lookup by ref.
 
 ### JSON Feed out — `_textcaster` extension
 
@@ -146,14 +171,16 @@ Design-system rules apply; UI tasks invoke `ui-ux-pro-max` first.
 
 ## Deferred — tracked, not dropped
 
-- **`source:comments` + per-post comments feed** (`GET /post/:id/comments.xml`
-  + `<source:comments count feedUrl>` on items with replies) — the
-  Winer-native way for aggregators to pull a conversation. **Blocked solely
-  on tooling:** the element is 6 days old (7/9/2026) and feedsmith 2.9.6
-  silently drops it in BOTH directions (probed). **Re-add trigger: the first
-  feedsmith release whose parse/generate types mention `comments` under
-  `sourceNs` — check on every dependency bump.** Also ledgered in
-  `.superpowers/sdd/progress.md` so it survives this spec going historical.
+- **`source:comments` CONSUMPTION** (following a remote item's
+  `source:comments feedUrl` to pull replies from third parties we don't
+  follow — thread completion, what threadwalker does). Emission ships THIS
+  milestone (§Wire formats); consumption is a poll-scope expansion (fetching
+  N extra feeds per poll, caps, SSRF posture) deserving its own design.
+- **Injector retirement:** the post-generation `source:comments` injector is
+  temporary — on every feedsmith bump, check whether `sourceNs` types grew
+  `comments` (parse AND generate); when they do, replace the injector with
+  the native key and add parse-side mapping for the consumption milestone.
+  Ledgered in `.superpowers/sdd/progress.md`.
 - Textcasting alignment batch (out of threading scope): `source:self`,
   compact `source:cloud`, `source:subscriptionList`/`source:blogroll` on our
   OPML surfaces — cheap adoptions for a between-milestones batch.
@@ -162,10 +189,11 @@ Design-system rules apply; UI tasks invoke `ui-ux-pro-max` first.
 
 ## Non-goals
 
-Reply-to-arbitrary-URL composing, reply counts/notifications, timeline
-bumping, nested rendering, fetching reply context for unresolved refs,
-comment moderation, editing threads. `source:comments` (above — deferred
-with trigger, not a non-goal forever).
+Reply-to-arbitrary-URL composing, reply notifications, timeline bumping,
+nested rendering, fetching reply context for unresolved refs, comment
+moderation, editing threads, push (hub/cloud) on comments feeds.
+`source:comments` consumption (above — deferred with a named trigger, not a
+non-goal forever; emission IS in scope).
 
 ## Testing
 
@@ -177,13 +205,20 @@ with trigger, not a non-goal forever).
   fallback, JF2, `_textcaster`).
 - HTTP: `POST /posts` with `inReplyTo` happy/404; `GET /post/:id/thread`
   content + order + 404.
+- Comments feed + injector: `GET /post/:id/comments.xml` items/order/404;
+  the injected `<source:comments>` lands inside the RIGHT `</item>` (guid
+  keyed), carries correct count + feedUrl, and appears only on items with
+  replies; omitted without `PUBLIC_URL`.
 - **Money test (definition of done):** two in-process instances. B follows
   A's feed. A local-composes a post; B ingests it. A local user on B replies
   via the reply button; B's feed now carries `source:inReplyTo` +
   `thr:in-reply-to`; A ingests B's feed and A's thread page for the original
   post shows the reply — a conversation federated over plain RSS, round
-  trip. Sibling: the same flow through the mf2/h-feed path (reply ingested
-  from an h-entry with `u-in-reply-to`).
+  trip. Then: A's main feed item for the original post now advertises
+  `<source:comments count="1">` whose `feedUrl` serves a comments feed
+  containing B's reply — the Winer-native pull side, threadwalker-walkable.
+  Sibling: the same flow through the mf2/h-feed path (reply ingested from an
+  h-entry with `u-in-reply-to`).
 - Web: form-action test for reply compose; thread-page load test; island
   predicate extended for the thread lens.
 
@@ -191,7 +226,8 @@ with trigger, not a non-goal forever).
 
 1. Migration 5 + repository additions + contract pins.
 2. Service/API: reply compose, resolution + adoption, thread endpoint.
-3. Wire: feed emit (source + thr + `_textcaster`) and `ParsedItem.inReplyTo`
-   ingestion across all three paths (probes first).
+3. Wire: feed emit (source + thr + `_textcaster`), the comments feed route +
+   `source:comments` injector, and `ParsedItem.inReplyTo` ingestion across
+   all three paths (probes first).
 4. Web: reply button, markers, thread page + live island.
 5. Money test + RUNNING.md.
