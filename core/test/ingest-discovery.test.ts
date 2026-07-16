@@ -131,3 +131,33 @@ test('a legitimate redirect on the discovered feed is followed and ingested', as
   expect(inserted).toBe(1)
   expect(seen).toEqual(['https://pub.ex/page', 'http://pub.ex/feed', 'http://pub.ex/feed2']) // redirect followed, re-validated
 })
+
+test('MONEY TEST: OPML-style HTML-page user becomes followable end to end', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  // Simulates an OPML import that stored an HTML page URL as the feedUrl.
+  const user = await repo.createRemoteUser({ handle: 'indieweb', displayName: 'IndieWeb', feedUrl: 'https://blog.ex/' })
+  const html = `<html><head><link rel="alternate" type="application/atom+xml" href="https://blog.ex/atom.xml"></head><body><p></p></body></html>`
+  const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Blog</title>
+    <entry><title>First</title><id>urn:1</id><link href="https://blog.ex/1"/><content>First post</content><updated>2026-01-01T00:00:00Z</updated></entry></feed>`
+  const calls: string[] = []
+  const fn = vi.fn(async (url: string | URL | Request) => {
+    const u = String(url); calls.push(u)
+    if (u === 'https://blog.ex/') return new Response(html, { headers: { 'content-type': 'text/html' } })
+    if (u === 'https://blog.ex/atom.xml') return new Response(atom, { headers: { 'content-type': 'application/atom+xml' } })
+    return new Response('x', { status: 404 })
+  }) as unknown as typeof fetch
+
+  // First poll: discovers + persists + ingests. publicLookup so blog.ex passes the guard.
+  const first = await ingestRemoteUser(repo, bus, user, fn, publicLookup)
+  expect(first.inserted).toBe(1)
+  expect((await repo.getUser(user.id))?.feedUrl).toBe('https://blog.ex/atom.xml')
+  const tl = await repo.getTimeline(10)
+  expect(tl.find((e) => e.content.includes('First'))).toBeTruthy()
+
+  // Second poll: hits the persisted feed directly (no page fetch, no re-discovery).
+  calls.length = 0
+  const refreshed = (await repo.getUser(user.id))!
+  await ingestRemoteUser(repo, bus, refreshed, fn, publicLookup)
+  expect(calls).toEqual(['https://blog.ex/atom.xml']) // page URL never fetched again
+})

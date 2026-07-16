@@ -75,6 +75,15 @@ Notes:
 - Delivery is best-effort (one retry). Subscribers that miss a ping catch
   up on their next poll.
 
+### Feed discovery
+
+A followed URL returning an HTML page is automatically resolved to its
+`<link rel="alternate">` feed, and the stored feed URL is rewritten to it.
+IndieWeb pages with `h-entry` microformats but no feed link are ingested
+directly, with the page re-parsed on each poll. Discovery runs at poll time,
+is one-hop only (no redirect chains for feed discovery), and private-address
+links are rejected whether direct or via redirect — SSRF-guarded.
+
 ### Receiving push (push-in)
 
 When a followed feed advertises WebSub (`rel="hub"`, also honored from HTTP
