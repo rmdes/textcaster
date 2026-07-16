@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types'
 import { env } from '$env/dynamic/private'
+import { renderPostHtml } from '$lib/server/render'
 
 const base = () => env.CORE_API_URL ?? 'http://localhost:8787'
 
@@ -19,7 +20,44 @@ export const GET: RequestHandler = async ({ request }) => {
 			headers: { 'content-type': upstream.headers.get('content-type') ?? 'text/plain' }
 		})
 	}
-	return new Response(upstream.body, {
+	// COR-3: a real SSE frame transformer, not a body pipe. Frames are
+	// buffered across chunks and split on the blank-line delimiter; id: and
+	// event: lines pass through BYTE-VERBATIM (the Last-Event-ID replay
+	// contract rests on them); only post events' data: JSON is enriched.
+	// Anything unparseable forwards untouched — the client falls back to
+	// plaintext, never raw.
+	const decoder = new TextDecoder()
+	const encoder = new TextEncoder()
+	let buffer = ''
+	const enrichFrame = (frame: string): string => {
+		if (!/^event: post$/m.test(frame)) return frame
+		return frame
+			.split('\n')
+			.map((line) => {
+				if (!line.startsWith('data: ')) return line
+				try {
+					const entry = JSON.parse(line.slice(6))
+					return `data: ${JSON.stringify({ ...entry, contentHtml: renderPostHtml(entry) })}`
+				} catch {
+					return line
+				}
+			})
+			.join('\n')
+	}
+	const transformed = upstream.body!.pipeThrough(
+		new TransformStream<Uint8Array, Uint8Array>({
+			transform(chunk, controller) {
+				buffer += decoder.decode(chunk, { stream: true })
+				const frames = buffer.split('\n\n')
+				buffer = frames.pop() ?? ''
+				for (const frame of frames) controller.enqueue(encoder.encode(enrichFrame(frame) + '\n\n'))
+			},
+			flush(controller) {
+				if (buffer) controller.enqueue(encoder.encode(enrichFrame(buffer)))
+			}
+		})
+	)
+	return new Response(transformed, {
 		status: upstream.status,
 		headers: {
 			'content-type': 'text/event-stream',

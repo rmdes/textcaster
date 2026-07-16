@@ -106,3 +106,37 @@ test('GET keeps the upstream content-type on error responses', async () => {
 	expect(res.status).toBe(500)
 	expect(res.headers.get('content-type')).toBe('application/json')
 })
+
+test('post events gain contentHtml; id and event lines are byte-verbatim (replay contract)', async () => {
+	const frame = `event: post\nid: p-1\ndata: ${JSON.stringify({ id: 'p-1', content: '<script>x</script><p>hi</p>', source: 'remote', author: {} })}\n\n`
+	const body = new ReadableStream({
+		start(controller) {
+			const b = new TextEncoder().encode(frame)
+			// split mid-frame to prove chunk buffering works
+			controller.enqueue(b.slice(0, 25))
+			controller.enqueue(b.slice(25))
+			controller.close()
+		}
+	})
+	global.fetch = vi.fn(async () => new Response(body, { status: 200 })) as unknown as typeof fetch
+	const res = await GET({ request: new Request('http://x/stream') } as never)
+	const text = await res.text()
+	expect(text).toContain('event: post\n')
+	expect(text).toContain('id: p-1\n')
+	const data = JSON.parse(text.split('data: ')[1].split('\n')[0])
+	expect(data.contentHtml).toContain('<p>hi</p>')
+	expect(data.contentHtml).not.toContain('script')
+})
+
+test('an unparseable frame forwards untouched', async () => {
+	const frame = 'event: post\nid: p-2\ndata: not-json\n\n'
+	const body = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode(frame))
+			controller.close()
+		}
+	})
+	global.fetch = vi.fn(async () => new Response(body, { status: 200 })) as unknown as typeof fetch
+	const res = await GET({ request: new Request('http://x/stream') } as never)
+	expect(await res.text()).toContain('data: not-json\n')
+})

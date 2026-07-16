@@ -1,13 +1,14 @@
 import type { PageServerLoad } from './$types'
 import { fail, redirect } from '@sveltejs/kit'
 import { getTimeline, createPost, addRemoteUser } from '$lib/api'
+import { enrichEntries } from '$lib/server/render'
 
 export const load: PageServerLoad = async ({ fetch, url }) => {
 	const before = url.searchParams.get('before') ?? undefined
 	const isFirstPage = !before
 	try {
 		const { timeline, nextCursor } = await getTimeline(fetch, { before })
-		return { timeline, nextCursor, isFirstPage }
+		return { timeline: enrichEntries(timeline), nextCursor, isFirstPage }
 	} catch {
 		return { timeline: [], nextCursor: null, isFirstPage, coreDown: true }
 	}

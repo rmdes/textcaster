@@ -1,12 +1,13 @@
 import type { PageServerLoad } from './$types'
 import { getTimeline } from '$lib/api'
+import { enrichEntries } from '$lib/server/render'
 
 export const load: PageServerLoad = async ({ fetch, params, url }) => {
 	const before = url.searchParams.get('before') ?? undefined
 	const isFirstPage = !before
 	try {
 		const { timeline, nextCursor } = await getTimeline(fetch, { before, author: params.handle })
-		return { handle: params.handle, timeline, nextCursor, isFirstPage }
+		return { handle: params.handle, timeline: enrichEntries(timeline), nextCursor, isFirstPage }
 	} catch {
 		return { handle: params.handle, timeline: [], nextCursor: null, isFirstPage, coreDown: true }
 	}

@@ -1,11 +1,12 @@
 import type { PageServerLoad, Actions } from './$types'
 import { fail, redirect } from '@sveltejs/kit'
 import { getThread, createPost } from '$lib/api'
+import { enrichEntries } from '$lib/server/render'
 
 export const load: PageServerLoad = async ({ fetch, params }) => {
 	try {
 		const thread = await getThread(fetch, params.id)
-		return { postId: params.id, thread, rootId: thread[0]?.id ?? params.id }
+		return { postId: params.id, thread: enrichEntries(thread), rootId: thread[0]?.id ?? params.id }
 	} catch {
 		return { postId: params.id, thread: [], rootId: params.id, coreDown: true }
 	}

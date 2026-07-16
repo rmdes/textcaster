@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { renderPostHtml } from './render'
+import { renderPostHtml, enrichEntries } from './render'
 
 const remote = (content: string, contentMarkdown: string | null = null) => ({ content, contentMarkdown, source: 'remote' as const })
 const local = (content: string) => ({ content, contentMarkdown: null, source: 'local' as const })
@@ -29,4 +29,12 @@ test('transform-added attributes survive in the OUTPUT (allowedAttributes gotcha
 
 test('GFM autolink on markdown paths', () => {
 	expect(renderPostHtml(local('see https://a.ex/1'))).toContain('<a href="https://a.ex/1"')
+})
+
+test('enrichEntries adds contentHtml per entry and leaves other fields untouched', () => {
+	const entry = { id: 'p-1', content: '**md**', contentMarkdown: null, source: 'local' as const }
+	const [out] = enrichEntries([entry])
+	expect(out.contentHtml).toContain('<strong>md</strong>')
+	expect(out.id).toBe('p-1')
+	expect(out.content).toBe('**md**')
 })
