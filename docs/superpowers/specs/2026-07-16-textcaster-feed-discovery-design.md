@@ -39,6 +39,16 @@ Decisions taken at design time:
   from a single parse of the HTML — so autodiscovery and h-feed share it.
 - **Discovery runs at poll/ingest time, never at OPML-import time** — import
   stays fetch-free by design (SSRF posture + backfill rules).
+- **Autodiscovery persistence is a one-way ratchet, accepted.** Once we
+  rewrite P→F and F later dies while the site reverts to serving only the
+  h-feed at P, `feedUrl` is stuck on the dead F. Low probability; accepted as
+  a `ponytail:` ceiling ("re-discover after N consecutive fetch failures if
+  it ever bites") rather than built now (review H2).
+- **The discovery gate is a cheap `<`-sniff.** Discovery is attempted only
+  when the feed parse fails AND the body's first non-whitespace char is `<`
+  (HTML/XML-ish), so a large non-HTML blob is never handed to the mf2 parser.
+  `mf2()` on non-markup is harmless (empty `items`/`rel-urls`) — the sniff is
+  purely to avoid parsing garbage (review, ponytail).
 
 ## 1. The discovery ladder (`ingestRemoteUser`)
 
@@ -55,11 +65,20 @@ HTML-ish content-type), it enters discovery on the HTML already in hand:
      - **SSRF guard**: `checkCallbackUrl(discoveredUrl)` — the URL is
        attacker-influenced content; reject loopback/private ranges before any
        request (same guard push-in uses).
-     - Fetch it (with the feed User-Agent/Accept headers), parse via
-       `parseFeedWithMeta`. On success: **persist** the discovered URL with
-       `repo.updateFeedUrl(user.id, discoveredUrl)`, then ingest its items.
-     - If the discovered URL equals the URL that just failed, do NOT re-fetch
-       (no loop) — fall through to h-feed.
+     - **Loop guard first:** if the discovered URL equals the URL just
+       fetched, do NOT re-fetch — fall through to h-feed (guard sits before
+       the SSRF check and fetch).
+     - Fetch it via a shared `fetchFeedBody(url, fetchFn)` helper (H3) —
+       extracted from the primary fetch so the feed `User-Agent`/`Accept`
+       headers, the 10s `AbortSignal` timeout, and the `MAX_FEED_BYTES`
+       pre/post-read cap are one implementation used by both fetches, not
+       copy-pasted. Parse via `parseFeedWithMeta`. On success: **persist** the
+       discovered URL with `repo.updateFeedUrl(user.id, discoveredUrl)`, then
+       ingest its items.
+     - **Hub/discovery metadata (H4):** in the autodiscovery branch the
+       merged `FeedDiscovery` (`rel="hub"` from the `Link` header + feed body)
+       is taken from the **discovered feed's** response, not the HTML page's
+       response.
 2. **h-feed.** If no feed link, `discoverFeed`'s `hentries` (parsed from the
    same HTML) are ingested directly. The `feedUrl` is left unchanged — the
    page is the feed and is re-parsed on each poll. `hasPostsByAuthor`
@@ -85,25 +104,41 @@ export interface Discovered {
 export function discoverFeed(html: string, pageUrl: string): Discovered
 ```
 
-- Parses `html` once with `microformats-parser` (`mf2(html, { baseUrl: pageUrl })`).
-- **feedUrl**: from the parse's `rels`/`rel-urls`, the first entry whose rels
-  include `alternate` and whose `type` is one of
-  `application/rss+xml`, `application/atom+xml`, `application/feed+json`,
-  `application/json`. Absolute (the parser resolves against `baseUrl`).
-- **hentries**: flatten `h-feed` → child `h-entry` items (and top-level
-  `h-entry` items). Each maps to a `ParsedItem`:
-  - `guid` = `uid` prop, else `url` prop, else `fallbackGuid(title, content, rawDate)` (reuse ingest's helper).
-  - `url` = `url` prop or null.
-  - `title` = `name` prop when present AND not equal to the content (mf2
-    "implied name" often duplicates content; drop it then) — else null.
-  - `content` = `content.value` (plain text) or `summary`, else `name`.
-  - `publishedAt` = `published` dt-property parsed to ISO, else now (clamped
-    to now if future, mirroring the feed path).
-- Exported as a pure function so it is unit-testable without network.
+- Parses `html` once with `microformats-parser` (`mf2(html, { baseUrl: pageUrl })`),
+  yielding both `rel-urls` (autodiscovery) and `items` (h-feed) — one parse,
+  both halves.
+- **feedUrl**: from `rel-urls`, the first entry (document order) whose `rels`
+  include `alternate` and whose `type` is one of `application/rss+xml`,
+  `application/atom+xml`, `application/feed+json`. **Bare `application/json`
+  is excluded** — too many non-feed links carry it (review). Absolute (the
+  parser resolves against `baseUrl`).
+- **hentries**: convert the parsed `h-feed`/`h-entry` items to **JF2** with
+  `@paulrobertlloyd/mf2tojf2`, then map each JF2 `entry` → `ParsedItem`. JF2
+  flattens mf2's nested property arrays into `{ type, name?, content?,
+  published?, url?, uid? }`, which is both cleaner to map and the idiomatic
+  IndieWeb intermediate representation:
+  - `guid` = `uid` ?? `url` ?? deterministic fallback (see below).
+  - `url` = JF2 `url` or null.
+  - `title` = JF2 `name` **only when JF2 retains a distinct name** — JF2
+    conversion / post-type-discovery drops the *implied* `p-name` that mf2
+    derives from an untitled note's own text, so a note does not get a bogus
+    title (this is the H1 fix). **Plan-time probe:** confirm mf2tojf2 drops
+    implied names; if it does not, apply the fallback heuristic — treat
+    `name` as a title only when it is NOT a prefix of the whitespace-
+    normalized content (the IndieWeb implied-name test), never mere `!==`.
+  - `content` = JF2 `content.text` (or `content` when a string), else
+    `summary`. If content is empty and only `name` exists, content = `name`
+    and `title` = null (never title === content).
+  - `publishedAt`/guid: route the mapped fields through the **exported**
+    `toParsedItem(...)` from `ingest.ts` so h-entries inherit the exact
+    determinism the feed path already fixed — the fallback guid hashes the
+    **raw** `published` string (or `''` when absent), never the defaulted
+    `now`, and future dates clamp to now (review H5).
+- Exported as a pure function, unit-testable without network.
 
-`ParsedItem` is the existing ingest type; `discovery.ts` imports it (and
-`fallbackGuid` if exported, or the mapping duplicates the one-line hash — TBD
-at plan time, prefer exporting `fallbackGuid`).
+`discovery.ts` reuses the existing `ParsedItem` type and the `toParsedItem`
+helper (both promoted to exports from `ingest.ts` — no logic change), so the
+h-feed path and the feed path share one item-construction discipline.
 
 ## 3. Data model — `updateFeedUrl`
 
@@ -121,25 +156,37 @@ updateFeedUrl(userId: string, feedUrl: string): Promise<void>
 
 Only autodiscovery calls it (h-feed leaves `feedUrl` as the page URL).
 
-## 4. Dependency
+## 4. Dependencies
 
-`microformats-parser` (npm, actively maintained, the reference mf2 parser for
-the JS IndieWeb ecosystem). Justification per the project's dependency rule:
+Two IndieWeb-standard packages, both justified per the project's dependency
+rule (propose it; say why stdlib/existing won't do):
 
-- mf2 is a real specification (nested microformats, the value-class pattern
-  for dates, implied properties) — hand-rolling it is error-prone and exactly
-  the kind of thing a battle-tested parser should own.
-- feedsmith parses feeds only (no HTML/mf2, no `rel` autodiscovery).
-- The same parse yields autodiscovery links AND h-feed items, so the one dep
-  covers both halves of the milestone — no second HTML parser.
+- **`microformats-parser`** — the reference mf2 parser for JS. mf2 is a real
+  specification (nested microformats, the value-class date pattern, implied
+  properties) not worth hand-rolling; feedsmith parses feeds only (no
+  HTML/mf2/`rel` autodiscovery); and one parse yields both the autodiscovery
+  `rel-urls` and the h-feed `items`, so it does double duty.
+- **`@paulrobertlloyd/mf2tojf2`** (v3) — converts mf2's nested-array items to
+  **JF2**, the flat IndieWeb rendering representation. It earns its place two
+  ways: the h-entry → `ParsedItem` mapping becomes a handful of flat property
+  reads instead of `properties.x[0]`-style spelunking, and — critically — JF2
+  conversion / post-type-discovery is the principled place the *implied*
+  `p-name` gets dropped, which is the H1 note-vs-article fix. This is the
+  idiomatic pairing (both from the Indiekit lineage).
 
-Its exact output shape (`items`, `rels`, `rel-urls`, the `baseUrl` option,
-how `type` is exposed on rel-urls) will be probed against the installed
-package at plan-writing time before any code is embedded — the same
-probe-before-embedding discipline used for feedsmith and kysely. If a
-rel-url `type` is not exposed, autodiscovery falls back to a targeted
-`<link rel="alternate" type=…>` scan of the HTML `<head>` (a small regex);
-the plan will pick the confirmed approach.
+**Confirmed at review** (against `microformats-parser@2.0.6` type defs, so the
+one-parse-yields-both claim is not assumed): `mf2(html, { baseUrl })` returns
+`{ rels, "rel-urls": Record<url, { rels: string[]; type?: string; … }>, items }`
+— `type` IS exposed per rel-url, `baseUrl` is required and resolves relative
+hrefs, `items` carry `type: string[]` + `properties` + `children`, and
+`content` is `{ html, value }`. `mf2` is a named export.
+
+**Plan-time probes** (before embedding code, as done for feedsmith/kysely):
+(1) `@paulrobertlloyd/mf2tojf2`'s exact JF2 output shape and its named export;
+(2) whether it drops implied `p-name` (if not, the §2 prefix-heuristic
+fallback applies); (3) ESM interop under Node native type-stripping — the repo
+is `"type": "module"` with no bundler, so confirm both packages expose an ESM
+entry in their `exports` map (review H6).
 
 ## 5. The money test (end to end)
 
@@ -172,8 +219,10 @@ are ingested, and `feedUrl` is unchanged.
 - `discoverFeed` unit tests (no network): `<link rel=alternate>` for rss /
   atom / json returns the absolute URL; relative href resolved against the
   page URL; multiple alternates → first feed-typed in document order;
-  h-feed HTML → mapped `ParsedItem`s (guid from uid/url, date, title-vs-content
-  rule); page with neither → `{ feedUrl: null, hentries: [] }`; a
+  h-feed HTML → mapped `ParsedItem`s (guid from uid/url; raw-date guid
+  determinism); **an untitled note h-entry → `title === null`, content intact
+  (the H1 implied-name case), and a genuinely-titled article h-entry → title
+  retained**; page with neither → `{ feedUrl: null, hentries: [] }`; a
   Cloudflare-challenge HTML → nulls.
 - Contract suite: `updateFeedUrl` reflects in `getUser`; no-op on unknown id.
 - `ingestRemoteUser` integration (staged fake fetch): HTML→autodiscover→feed
@@ -196,8 +245,9 @@ are ingested, and `feedUrl` is unchanged.
 ## Sequencing
 
 1. `updateFeedUrl` repository method + contract pin.
-2. `microformats-parser` dependency + `discoverFeed` module (autodiscovery
-   links + h-feed mapping) with unit tests.
+2. `microformats-parser` + `@paulrobertlloyd/mf2tojf2` dependencies +
+   `discoverFeed` module (autodiscovery links + JF2 h-feed mapping) with unit
+   tests; promote `ParsedItem`/`toParsedItem` to exports from `ingest.ts`.
 3. Wire discovery into `ingestRemoteUser` (the ladder, SSRF guard, persist)
    with staged-fetch integration tests.
 4. Money test + h-feed sibling + RUNNING.md note (feeds behind HTML pages and
