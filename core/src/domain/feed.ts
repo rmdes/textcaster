@@ -1,6 +1,7 @@
 import { generateRssFeed, generateJsonFeed } from 'feedsmith'
 import type { WebSubMode } from '../config.ts'
 import type { Post, User } from './types.ts'
+import { renderLocalHtml } from './markdown.ts'
 
 export interface FeedContext {
   publicUrl: string | null
@@ -38,6 +39,20 @@ export function replyWireElements(ref: string) {
   }
 }
 
+// Dual contract per item: local posts emit rendered HTML + their markdown
+// source; remote posts re-emit as stored (pass-through), incl. any captured
+// source:markdown. Merges with replyWireElements' sourceNs (inReplyTo).
+function itemContentFields(p: Post) {
+  const reply = p.inReplyTo ? replyWireElements(p.inReplyTo) : undefined
+  const markdown = p.source === 'local' ? p.content : p.contentMarkdown ?? undefined
+  const sourceNs = { ...(reply?.sourceNs ?? {}), ...(markdown ? { markdown } : {}) }
+  return {
+    description: p.source === 'local' ? renderLocalHtml(p.content) : p.content,
+    ...(Object.keys(sourceNs).length ? { sourceNs } : {}),
+    ...(reply?.thr ? { thr: reply.thr } : {}),
+  }
+}
+
 export function renderRssFeed(user: User, posts: Post[], ctx: FeedContext): string {
   const atomLinks: Array<{ href: string; rel: string; type?: string }> = []
   let cloud
@@ -64,11 +79,10 @@ export function renderRssFeed(user: User, posts: Post[], ctx: FeedContext): stri
       ...(cloud ? { cloud } : {}),
       items: posts.map((p) => ({
         ...(p.title !== null ? { title: p.title } : {}), // Textcasting: never synthesize a title
-        description: p.content,
         guid: { value: p.guid, isPermaLink: false },
         ...(p.url !== null ? { link: p.url } : {}),
         pubDate: p.publishedAt,
-        ...(p.inReplyTo ? replyWireElements(p.inReplyTo) : {}),
+        ...itemContentFields(p),
       })),
     },
     // lenient: type-level only — selects the DeepPartial<..., DateLike> overload so
@@ -116,11 +130,10 @@ export function renderCommentsFeed(post: Post, replies: Post[], ctx: FeedContext
       description: `Replies to "${label}"`,
       items: replies.map((p) => ({
         ...(p.title !== null ? { title: p.title } : {}),
-        description: p.content,
         guid: { value: p.guid, isPermaLink: false },
         ...(p.url !== null ? { link: p.url } : {}),
         pubDate: p.publishedAt,
-        ...(p.inReplyTo ? replyWireElements(p.inReplyTo) : {}),
+        ...itemContentFields(p),
       })),
     },
     { lenient: true },
@@ -137,7 +150,9 @@ export function renderJsonFeed(user: User, posts: Post[], ctx: FeedContext): str
       items: posts.map((p) => ({
         id: p.guid,
         ...(p.title !== null ? { title: p.title } : {}),
-        content_text: p.content,
+        ...(p.source === 'local'
+          ? { content_html: renderLocalHtml(p.content), content_text: p.content }
+          : { content_text: p.content }),
         ...(p.url !== null ? { url: p.url } : {}),
         date_published: p.publishedAt,
       })),

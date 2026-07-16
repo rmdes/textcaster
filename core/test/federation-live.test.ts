@@ -76,7 +76,7 @@ test('REAL-TIME LOOP: B receives A post via WebSub fat ping, no polling', async 
   await A.service.createLocalPostAs('alice', 'Alice', 'pushed across instances 🎯')
   await vi.waitFor(async () => {
     const contents = (await B.repo.getTimeline(10)).map((e) => e.content)
-    expect(contents).toContain('pushed across instances 🎯')
+    expect(contents).toContain('<p>pushed across instances 🎯</p>') // local post → rendered HTML on the wire (dual contract)
   })
   expect(liveSeen).toHaveBeenCalled() // B's live timeline saw it too
 })
@@ -124,6 +124,6 @@ test('REAL-TIME LOOP (rssCloud): thin ping triggers immediate re-fetch', async (
 
   await A.service.createLocalPostAs('alice', 'Alice', 'thin-pinged across 🌩')
   await vi.waitFor(async () => {
-    expect((await B.repo.getTimeline(10)).map((e) => e.content)).toContain('thin-pinged across 🌩')
+    expect((await B.repo.getTimeline(10)).map((e) => e.content)).toContain('<p>thin-pinged across 🌩</p>') // local post → rendered HTML on the wire (dual contract)
   })
 })

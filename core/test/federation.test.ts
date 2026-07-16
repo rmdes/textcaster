@@ -31,7 +31,7 @@ test('the loop closes: instance B ingests instance A user as a remote over plain
 
   const timeline = await repoB.getTimeline(10)
   const contents = timeline.map((e) => e.content)
-  expect(contents).toContain('hello from instance A — ünïcode ✓')
+  expect(contents).toContain('<p>hello from instance A — ünïcode ✓</p>') // local post → rendered HTML on the wire (dual contract)
   expect(timeline.every((e) => e.source === 'remote')).toBe(true)
   expect(timeline[0].author.handle).toBe('alice-a')
 

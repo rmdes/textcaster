@@ -34,7 +34,8 @@ test('MONEY TEST: a conversation federates over plain RSS, round trip, threadwal
   // B follows alice's feed and ingests the post
   const aliceOnB = await B.repo.createRemoteUser({ handle: 'alice-a', displayName: 'Alice', feedUrl: 'https://a.example/users/alice/feed.xml' })
   await ingestRemoteUser(B.repo, B.bus, aliceOnB, A.serve as unknown as typeof fetch, publicLookup)
-  const ingested = (await B.repo.getTimeline(10)).find((e) => e.content === 'hello from A')!
+  // A's feed renders local posts as HTML (dual contract) — B ingests that rendered form
+  const ingested = (await B.repo.getTimeline(10)).find((e) => e.content === '<p>hello from A</p>')!
 
   // B: bob replies via the reply button (target = the ingested copy)
   await B.app.request('/posts', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'bob', content: 'reply from B', inReplyTo: ingested.id }) })
@@ -49,7 +50,9 @@ test('MONEY TEST: a conversation federates over plain RSS, round trip, threadwal
   await ingestRemoteUser(A.repo, A.bus, bobOnA, B.serve as unknown as typeof fetch, publicLookup)
 
   const thread = await (await A.app.request(`/post/${orig.post.id}/thread`)).json()
-  expect(thread.thread.map((e: { content: string }) => e.content)).toEqual(['hello from A', 'reply from B'])
+  // orig is A's own local post (raw content); bob's reply arrived via ingesting B's
+  // rendered feed (dual contract), so it's stored HTML too.
+  expect(thread.thread.map((e: { content: string }) => e.content)).toEqual(['hello from A', '<p>reply from B</p>'])
 
   // Winer-native pull side: A's feed advertises the conversation…
   const aliceFeed = await (await A.app.request('/users/alice/feed.xml')).text()

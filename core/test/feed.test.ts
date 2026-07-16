@@ -30,7 +30,7 @@ test('RSS feed round-trips through our own parser (Textcasting profile intact)',
   const body = await res.text()
   const items = (await parseFeedWithMeta(body)).items
   expect(items.length).toBe(2)
-  expect(items.map((i) => i.content)).toContain('first body')
+  expect(items.map((i) => i.content)).toContain('<p>first body</p>') // local post → rendered HTML on the wire (dual contract)
   expect(items[0].title).toBeNull() // local posts are title-less; never synthesized
   expect(items[0].guid).toBeTruthy()
 })
