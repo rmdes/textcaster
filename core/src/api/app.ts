@@ -87,6 +87,34 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.json({ post }, 201)
   })
 
+  async function resolveUser(handleRaw: string): Promise<import('../domain/types.ts').User | undefined> {
+    return service.getUserByHandle(handleRaw.toLowerCase())
+  }
+
+  app.post('/users/:handle/follows', bearerAuth(token), async (c) => {
+    const body = await readJsonBody(c)
+    if (!body || !isString(body.handle, 1, 64)) return c.json({ error: 'handle invalid' }, 400)
+    const follower = await resolveUser(c.req.param('handle') ?? '')
+    const target = await resolveUser(body.handle)
+    if (!follower || !target) return c.json({ error: 'unknown user' }, 404)
+    await service.addFollow(follower, target) // throws DomainError → 400 if follower not local
+    return c.json({ ok: true }, 200)
+  })
+
+  app.delete('/users/:handle/follows/:target', bearerAuth(token), async (c) => {
+    const follower = await resolveUser(c.req.param('handle') ?? '')
+    const target = await resolveUser(c.req.param('target') ?? '')
+    if (!follower || !target) return c.json({ error: 'unknown user' }, 404)
+    await service.removeFollow(follower.id, target.id)
+    return c.json({ ok: true }, 200)
+  })
+
+  app.get('/users/:handle/follows', async (c) => {
+    const user = await resolveUser(c.req.param('handle') ?? '')
+    if (!user) return c.json({ error: 'unknown user' }, 404)
+    return c.json({ following: await service.listFollowing(user.id) })
+  })
+
   const FEED_LIMIT = 50
 
   async function resolveFeedUser(c: Context): Promise<{ user: import('../domain/types.ts').User } | Response> {
@@ -176,7 +204,20 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
       if (!Number.isInteger(n)) return c.json({ error: 'limit invalid' }, 400)
       limit = Math.min(Math.max(n, 1), 100)
     }
-    const timeline = await service.getTimeline(limit, before)
+    const followedByRaw = c.req.query('followed_by')
+    const authorRaw = c.req.query('author')
+    if (followedByRaw !== undefined && authorRaw !== undefined) return c.json({ error: 'followed_by and author are mutually exclusive' }, 400)
+    let filter: { followedBy?: string; authorId?: string } | undefined
+    if (followedByRaw !== undefined) {
+      const u = await resolveUser(followedByRaw)
+      if (!u) return c.json({ error: 'unknown user' }, 404)
+      filter = { followedBy: u.id }
+    } else if (authorRaw !== undefined) {
+      const u = await resolveUser(authorRaw)
+      if (!u) return c.json({ error: 'unknown user' }, 404)
+      filter = { authorId: u.id }
+    }
+    const timeline = await service.getTimeline(limit, before, filter)
     const last = timeline[timeline.length - 1]
     // Known accepted edge: an exactly-limit final page yields a non-null cursor
     // whose next page is empty.
