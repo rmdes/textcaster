@@ -246,12 +246,12 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       const a = await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
       const b = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
       const c = await repo.createRemoteUser({ handle: 'blog', displayName: 'Blog', feedUrl: 'https://ex.com/b.xml' })
-      await repo.addFollow(a.id, b.id)
-      await repo.addFollow(a.id, c.id)
-      await repo.addFollow(a.id, b.id) // duplicate — no throw, no second row
+      await repo.addFollow(a.id, c.id) // follow 'blog' first
+      await repo.addFollow(a.id, b.id) // follow 'news' second
+      await repo.addFollow(a.id, c.id) // duplicate re-follow of blog — still idempotent
       const following = await repo.listFollowing(a.id)
-      // created_at ASC is the primary order (spec); the two adds land in the same
-      // millisecond, so a handle-ASC tiebreak makes the result deterministic (P2).
+      // Insertion order (blog first, news second) matches assertion regardless of timing.
+      // Even if both land in the same millisecond and tiebreak by handle ASC, result is blog, news.
       expect(following.map((u) => u.handle)).toEqual(['blog', 'news'])
     })
 
