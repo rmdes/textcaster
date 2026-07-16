@@ -72,9 +72,18 @@ HTML-ish content-type), it enters discovery on the HTML already in hand:
        extracted from the primary fetch so the feed `User-Agent`/`Accept`
        headers, the 10s `AbortSignal` timeout, and the `MAX_FEED_BYTES`
        pre/post-read cap are one implementation used by both fetches, not
-       copy-pasted. Parse via `parseFeedWithMeta`. On success: **persist** the
-       discovered URL with `repo.updateFeedUrl(user.id, discoveredUrl)`, then
-       ingest its items.
+       copy-pasted. Parse via `parseFeedWithMeta`. On success: ingest its
+       items, and **persist** the discovered URL with
+       `repo.updateFeedUrl(user.id, discoveredUrl)` — **but only if no OTHER
+       user already holds `discoveredUrl` as their `feedUrl`** (R1). `feed_url`
+       has no UNIQUE constraint, so an unconditional rewrite could converge two
+       users (one added for the HTML page, one for the direct feed) onto one
+       `feedUrl` string — silently breaking import case-1's feedUrl-keyed Map
+       and double-ingesting. Check via `listRemoteUsers()` (collision is rare —
+       only on autodiscovery success); on collision, skip the rewrite and keep
+       the page URL (this user keeps re-discovering through the page each poll —
+       wasteful but correct; user-level merge stays out of scope). Items from
+       this poll are ingested either way.
      - **Hub/discovery metadata (H4):** in the autodiscovery branch the
        merged `FeedDiscovery` (`rel="hub"` from the `Link` header + feed body)
        is taken from the **discovered feed's** response, not the HTML page's
@@ -207,8 +216,22 @@ are ingested, and `feedUrl` is unchanged.
 
 - The discovered feed URL comes from attacker-influenced page content, so it
   passes `checkCallbackUrl` (loopback/link-local/RFC-1918/ULA rejection)
-  before any fetch — the same guard the push-in callbacks use. The DNS-rebind
-  residual ledgered in milestone 1 applies equally and is not re-litigated.
+  before any fetch — the same guard the push-in callbacks use. That guard also
+  enforces **http(s)-only**, so it doubles as the scheme gate: a
+  `<link rel="alternate" href="file:…">` or `itpc:` garbage link is rejected
+  for free. The DNS-rebind residual ledgered in milestone 1 applies equally
+  and is not re-litigated.
+- **Redirect posture (R2): the discovered feed fetch FOLLOWS redirects**
+  (default `fetch` behavior), unlike push-in's hub/callback fetches which use
+  `redirect: 'manual'`. The difference is deliberate: feeds legitimately
+  301/302, so `manual` would break real feeds, whereas a hub callback never
+  should redirect. The accepted residual — a public redirector could point the
+  post-guard fetch at a private address — is **strictly no worse than the
+  primary feed fetch**, which already fetches member-supplied `feedUrl`s with
+  no guard at all; the guard's job here is only to stop *direct* private-address
+  links in page content, and the redirector case is the same class as the
+  already-ledgered DNS rebind. Stated so neither an implementer nor a future
+  reviewer relitigates it.
 - One-hop limit bounds amplification: a malicious page cannot chain us
   through many fetches; discovery issues at most one extra request.
 - The 10s fetch timeout and `MAX_FEED_BYTES` cap apply to the discovered
@@ -228,7 +251,11 @@ are ingested, and `feedUrl` is unchanged.
 - `ingestRemoteUser` integration (staged fake fetch): HTML→autodiscover→feed
   ingests + persists the new `feedUrl`; discovered URL == failed URL does not
   loop; SSRF-rejected discovered URL → no second fetch, failure logged;
-  h-feed-only page ingests h-entries and leaves `feedUrl` unchanged.
+  h-feed-only page ingests h-entries and leaves `feedUrl` unchanged;
+  **collision (R1): when another user already holds the discovered URL, the
+  rewrite is skipped (page-user keeps the page URL) but the items still
+  ingest**; **redirect (R2): a discovered feed served via a 301 still ingests
+  (redirects are followed).**
 - Money test (§5) + the h-feed sibling.
 
 ## Non-goals
@@ -241,6 +268,10 @@ are ingested, and `feedUrl` is unchanged.
 - Multiple feeds per site / letting the operator choose among discovered
   feeds (first feed-typed alternate wins).
 - Writing h-feed OUT (this is ingestion only).
+- User-level dedup/merge: two users that resolve to the same feed content will
+  both ingest it (double posts under two authors). R1 only prevents them
+  sharing an identical stored `feedUrl` string; merging the users themselves is
+  a separate concern, deferred.
 
 ## Sequencing
 
