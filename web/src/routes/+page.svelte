@@ -6,6 +6,7 @@
 	import ReplyTree from '$lib/ReplyTree.svelte'
 	import FeedIcon from '$lib/FeedIcon.svelte'
 	import { plaintext } from '$lib/plaintext'
+	import Linkified from '$lib/Linkified.svelte'
 	import { hiddenIds, fetchThread } from '$lib/wedge'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -93,7 +94,7 @@
 						<FeedIcon author={post.author} />
 					</div>
 					{#if post.title}<h2 class="title">{post.title}</h2>{/if}
-					<p>{plaintext(post.content)}</p>
+					<p><Linkified text={plaintext(post.content)} /></p>
 					<a class="source" href="/post/{post.id}">{post.replyCount || post.threadRootId || post.inReplyToPostId ? 'View conversation' : 'Reply'}</a>
 					{#if post.inReplyTo && !post.inReplyToPostId && post.inReplyTo.startsWith('http')}
 						<a class="source" href={post.inReplyTo} rel="noreferrer">in reply to ↗</a>

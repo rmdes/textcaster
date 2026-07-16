@@ -5,6 +5,7 @@
 	import ThemeToggle from '$lib/ThemeToggle.svelte'
 	import { keepEvent } from '$lib/lens'
 	import { plaintext } from '$lib/plaintext'
+	import Linkified from '$lib/Linkified.svelte'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let live = $state<TimelineEntry[]>([])
@@ -13,6 +14,13 @@
 	function onPost(entry: TimelineEntry) {
 		if (keepEvent(entry, { kind: 'thread', rootId: data.rootId }) && !posts.some((p) => p.id === entry.id)) live = [...live, entry]
 	}
+
+	// "Replying to" is the way up, one step at a time (rss.chat, 7/10/26):
+	// when the viewed post is a reply, link its parent's page.
+	const viewed = $derived(posts.find((p) => p.id === data.postId))
+	const parent = $derived(
+		viewed?.inReplyToPostId ? posts.find((p) => p.id === viewed.inReplyToPostId) : undefined
+	)
 </script>
 
 <LiveTimeline {onPost} />
@@ -24,6 +32,11 @@
 	</header>
 
 	<h1>Conversation</h1>
+	{#if parent}
+		<p class="subnav">Replying to <a href="/post/{parent.id}">@{parent.author.handle}</a></p>
+	{:else if viewed?.inReplyTo && !viewed.inReplyToPostId && viewed.inReplyTo.startsWith('http')}
+		<p class="subnav">Replying to <a href={viewed.inReplyTo} rel="noreferrer">↗ {viewed.inReplyTo}</a></p>
+	{/if}
 
 	{#if data.coreDown}<p class="notice" role="alert">Core API unreachable — is the core server running?</p>{/if}
 	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
@@ -37,7 +50,7 @@
 					<span class="kind">{post.source}</span>
 				</div>
 				{#if post.title}<h2 class="title">{post.title}</h2>{/if}
-				<p>{plaintext(post.content)}</p>
+				<p><Linkified text={plaintext(post.content)} /></p>
 				{#if post.url}<a class="source" href={post.url} rel="noreferrer">source</a>{/if}
 			</li>
 		{:else}

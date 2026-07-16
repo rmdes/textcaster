@@ -7,6 +7,7 @@
 	import FeedIcon from '$lib/FeedIcon.svelte'
 	import { keepEvent } from '$lib/lens'
 	import { plaintext } from '$lib/plaintext'
+	import Linkified from '$lib/Linkified.svelte'
 	import { hiddenIds, fetchThread } from '$lib/wedge'
 
 	let { data }: { data: PageData } = $props()
@@ -68,7 +69,7 @@
 					<span class="wedge light" aria-hidden="true">▸</span>
 				{/if}
 				{#if post.title}<h2 class="title">{post.title}</h2>{/if}
-				<p>{plaintext(post.content)}</p>
+				<p><Linkified text={plaintext(post.content)} /></p>
 				<a class="source" href="/post/{post.id}">{post.replyCount || post.threadRootId || post.inReplyToPostId ? 'View conversation' : 'Reply'}</a>
 				{#if post.inReplyTo && !post.inReplyToPostId && post.inReplyTo.startsWith('http')}
 					<a class="source" href={post.inReplyTo} rel="noreferrer">in reply to ↗</a>
