@@ -200,10 +200,14 @@ posting OPML directly to the core route is unaffected.
 ## Replies & conversations
 
 Every post in the timeline links to its own `/post/<id>` page, labeled
-"Reply" (for a post with no thread yet) or "View conversation" (once it's
-part of one). That page is a plain HTML form — replying needs no JS. A
-locally-composed reply whose target has no resolvable `url` shows "in reply
-to ↗" pointing at the raw ref instead, when the ref itself is an http(s) URL.
+"View conversation" when the post is itself a reply or a thread descendant
+(`inReplyToPostId` or `threadRootId` set) and "Reply" otherwise — including
+for a thread root that already has replies, since the timeline view never
+fetches reply counts per post. That page is a plain HTML form — replying
+needs no JS. An ingested reply whose ref never resolved to a local post
+shows "in reply to ↗" pointing at the raw ref instead, when the ref itself
+is an http(s) URL — a locally-composed reply's target is always a known
+local post at compose time, so it never falls into this case.
 
 Replies federate over the same plain feeds as everything else:
 
@@ -220,7 +224,7 @@ feed item as `<source:comments count="N" feedUrl="…"/>`, pointing at:
 
 | Method | Route | Notes |
 |---|---|---|
-| `GET` | `/post/<id>/comments.xml` | RSS feed of direct replies to `<id>` — the Winer-native "threadwalker" pull side. Needs `TEXTCASTER_PUBLIC_URL`; omitted without it. |
+| `GET` | `/post/<id>/comments.xml` | RSS feed of direct replies to `<id>` — the Winer-native "threadwalker" pull side. Always serves regardless of `TEXTCASTER_PUBLIC_URL`; only the `<source:comments>` advertisement pointing at it requires `TEXTCASTER_PUBLIC_URL` and is omitted without it. |
 | `GET` | `/post/<id>/thread` | The whole conversation (root + all descendants) as JSON. |
 
 ## Deployment note
