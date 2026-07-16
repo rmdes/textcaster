@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
+    "@paulrobertlloyd/mf2tojf2": "^3.0.0",
     "better-sqlite3": "^12.11.1",
     "feedsmith": "^2.9.6",
     "hono": "^4.6.0",
-    "kysely": "^0.29.3"
+    "kysely": "^0.29.3",
+    "microformats-parser": "^2.0.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",

@@ -42,7 +42,7 @@ function toIsoOrNow(raw: string, now: string): string {
   return Number.isNaN(d.getTime()) ? now : d.toISOString()
 }
 
-function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string): ParsedItem {
+export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string): ParsedItem {
   return { guid: guid ?? url ?? fallbackGuid(title, content, rawDate), title, content, url, publishedAt: toIsoOrNow(rawDate, now) }
 }
 
