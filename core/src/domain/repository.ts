@@ -3,6 +3,7 @@ import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry, TimelineCu
 export interface Repository {
   createLocalUser(u: NewLocalUser): Promise<User>
   createRemoteUser(u: NewRemoteUser): Promise<User>
+  updateFeedUrl(userId: string, feedUrl: string): Promise<void>
   getUser(id: string): Promise<User | undefined>
   getUserByHandle(handle: string): Promise<User | undefined>
   listRemoteUsers(): Promise<User[]>

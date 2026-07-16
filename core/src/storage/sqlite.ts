@@ -60,6 +60,10 @@ export class SqliteRepository implements Repository {
   createLocalUser(u: NewLocalUser) { return this.insertUser('local', u.handle, u.displayName, null) }
   createRemoteUser(u: NewRemoteUser) { return this.insertUser('remote', u.handle, u.displayName, u.feedUrl) }
 
+  async updateFeedUrl(userId: string, feedUrl: string) {
+    await this.db.updateTable('users').set({ feed_url: feedUrl }).where('id', '=', userId).execute()
+  }
+
   async getUser(id: string) {
     const r = await this.db.selectFrom('users').selectAll().where('id', '=', id).executeTakeFirst()
     return r ? rowToUser(r) : undefined

@@ -31,6 +31,14 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       expect(remotes.map((x) => x.handle)).toEqual(['news'])
     })
 
+    test('updateFeedUrl changes a user feedUrl and no-ops on an unknown id', async () => {
+      const repo = await makeRepo()
+      const u = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/page' })
+      await repo.updateFeedUrl(u.id, 'https://ex.com/feed.xml')
+      expect((await repo.getUser(u.id))?.feedUrl).toBe('https://ex.com/feed.xml')
+      await repo.updateFeedUrl('no-such-id', 'https://ex.com/x') // no throw
+    })
+
     test('inserts posts and returns a newest-first timeline with authors', async () => {
       const repo = await makeRepo()
       const a = await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
