@@ -6,7 +6,7 @@ import sanitizeHtml from 'sanitize-html'
 // Remote content is never routed through this: pass-through applies to
 // OTHERS' content, not to HTML we author ourselves.
 const SANITIZE_CONFIG: sanitizeHtml.IOptions = {
-  allowedTags: ['p', 'br', 'a', 'em', 'strong', 'b', 'i', 'blockquote', 'code', 'pre', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'img'],
+  allowedTags: ['p', 'br', 'a', 'em', 'strong', 'b', 'i', 'blockquote', 'code', 'pre', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'img', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'del'],
   allowedAttributes: { a: ['href', 'rel'], img: ['src', 'loading'] },
   allowedSchemes: ['http', 'https'],
   allowProtocolRelative: false,

@@ -74,3 +74,11 @@ test('renderLocalHtml hostile fixtures never survive (drift canary vs web/src/li
   expect(renderLocalHtml('<p class="x" style="y">attrs stripped</p>')).not.toContain('class=')
   expect(renderLocalHtml('<a href="//evil.com">x</a>')).not.toContain('href=')
 })
+
+test('GFM parity mirror: tables/del survive, checkbox inputs never (drift canary)', () => {
+  const table = renderLocalHtml('| a | b |\n| - | - |\n| 1 | 2 |')
+  expect(table).toContain('<table>')
+  expect(table).toContain('<td>1</td>')
+  expect(renderLocalHtml('~~gone~~')).toContain('<del>gone</del>')
+  expect(renderLocalHtml('- [ ] never a checkbox')).not.toContain('<input')
+})

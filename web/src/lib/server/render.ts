@@ -2,7 +2,7 @@ import { marked } from 'marked'
 import sanitizeHtml from 'sanitize-html'
 
 const SANITIZE_CONFIG: sanitizeHtml.IOptions = {
-	allowedTags: ['p', 'br', 'a', 'em', 'strong', 'b', 'i', 'blockquote', 'code', 'pre', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'img'],
+	allowedTags: ['p', 'br', 'a', 'em', 'strong', 'b', 'i', 'blockquote', 'code', 'pre', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'img', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'del'],
 	allowedAttributes: { a: ['href', 'rel'], img: ['src', 'loading'] },
 	allowedSchemes: ['http', 'https'],
 	allowProtocolRelative: false,

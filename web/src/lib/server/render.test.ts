@@ -39,3 +39,13 @@ test('enrichEntries adds contentHtml per entry and leaves other fields untouched
 	expect(out.id).toBe('p-1')
 	expect(out.content).toBe('**md**')
 })
+
+test('GFM parity: tables and strikethrough survive; task-list checkboxes never do', () => {
+	const table = renderPostHtml(local('| a | b |\n| - | - |\n| 1 | 2 |'))
+	expect(table).toContain('<table>')
+	expect(table).toContain('<td>1</td>')
+	expect(renderPostHtml(local('~~gone~~'))).toContain('<del>gone</del>')
+	const task = renderPostHtml(local('- [ ] never a checkbox'))
+	expect(task).not.toContain('<input')
+	expect(task).toContain('never a checkbox') // degrades to text, not silence
+})
