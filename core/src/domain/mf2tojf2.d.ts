@@ -7,6 +7,7 @@ declare module '@paulrobertlloyd/mf2tojf2' {
     published?: string
     url?: string
     uid?: string
+    'in-reply-to'?: string | string[]
     children?: Jf2[]
   }
   export function mf2tojf2(parsed: unknown): Jf2

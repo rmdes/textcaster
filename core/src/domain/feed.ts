@@ -28,6 +28,16 @@ function channelLink(ctx: FeedContext, handle: string): string {
   return ctx.publicUrl ? `${ctx.publicUrl}/users/${handle}` : `https://textcaster.invalid/users/${handle}`
 }
 
+// Dual-emit reply metadata: source:inReplyTo (Textcasting; isPermaLink=false for
+// non-permalink refs, per source-namespace docs) + thr:in-reply-to (RFC 4685).
+export function replyWireElements(ref: string) {
+  const isUrl = ref.startsWith('http://') || ref.startsWith('https://')
+  return {
+    sourceNs: { inReplyTo: { value: ref, ...(isUrl ? {} : { isPermaLink: false }) } },
+    thr: { inReplyTos: [{ ref, ...(isUrl ? { href: ref } : {}) }] },
+  }
+}
+
 export function renderRssFeed(user: User, posts: Post[], ctx: FeedContext): string {
   const atomLinks: Array<{ href: string; rel: string; type?: string }> = []
   let cloud
@@ -58,6 +68,7 @@ export function renderRssFeed(user: User, posts: Post[], ctx: FeedContext): stri
         guid: { value: p.guid, isPermaLink: false },
         ...(p.url !== null ? { link: p.url } : {}),
         pubDate: p.publishedAt,
+        ...(p.inReplyTo ? replyWireElements(p.inReplyTo) : {}),
       })),
     },
     // lenient: type-level only — selects the DeepPartial<..., DateLike> overload so

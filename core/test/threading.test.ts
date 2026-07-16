@@ -1,0 +1,43 @@
+import { test, expect } from 'vitest'
+import { parseFeedWithMeta } from '../src/domain/ingest.ts'
+import { discoverFeed } from '../src/domain/discovery.ts'
+import { renderRssFeed } from '../src/domain/feed.ts'
+import type { User, Post } from '../src/domain/types.ts'
+
+const RSS_NS = 'xmlns:source="http://source.scripting.com/" xmlns:thr="http://purl.org/syndication/thread/1.0"'
+
+test('RSS in: source:inReplyTo preferred, thr fallback', async () => {
+  const both = `<?xml version="1.0"?><rss version="2.0" ${RSS_NS}><channel><title>t</title>
+    <item><guid>g1</guid><description>d</description><source:inReplyTo>https://a.ex/1</source:inReplyTo><thr:in-reply-to ref="WRONG"/></item>
+    <item><guid>g2</guid><description>d</description><thr:in-reply-to ref="https://a.ex/2" href="https://a.ex/2"/></item>
+    <item><guid>g3</guid><description>d</description></item>
+  </channel></rss>`
+  const { items } = await parseFeedWithMeta(both)
+  expect(items.map((i) => i.inReplyTo)).toEqual(['https://a.ex/1', 'https://a.ex/2', null])
+})
+
+test('Atom in: thr:in-reply-to ref', async () => {
+  const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:thr="http://purl.org/syndication/thread/1.0"><title>t</title>
+    <entry><id>e1</id><title>re</title><content>c</content><updated>2026-01-01T00:00:00Z</updated><thr:in-reply-to ref="https://a.ex/1"/></entry></feed>`
+  const { items } = await parseFeedWithMeta(atom)
+  expect(items[0].inReplyTo).toBe('https://a.ex/1')
+})
+
+test('mf2 in: u-in-reply-to as string and as array', () => {
+  const single = `<div class="h-entry"><a class="u-in-reply-to" href="https://a.ex/1">re</a><p class="e-content">agree</p></div>`
+  const multi = `<div class="h-entry"><a class="u-in-reply-to" href="https://a.ex/1">re</a><a class="u-in-reply-to" href="https://a.ex/2">re2</a><p class="e-content">agree</p></div>`
+  expect(discoverFeed(single, 'https://b.ex/').hentries[0].inReplyTo).toBe('https://a.ex/1')
+  expect(discoverFeed(multi, 'https://b.ex/').hentries[0].inReplyTo).toBe('https://a.ex/1')
+})
+
+const user: User = { id: 'u1', kind: 'local', handle: 'alice', displayName: 'Alice', feedUrl: null, createdAt: '2026-01-01T00:00:00.000Z' }
+const post = (over: Partial<Post>): Post => ({ id: 'p1', authorId: 'u1', source: 'local', guid: 'guid-1', title: null, content: 'c', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z', ...over })
+const ctx = { publicUrl: 'https://cast.example', hubUrl: null, rssCloud: false }
+
+test('RSS out: reply items dual-emit; bare-guid ref carries isPermaLink=false; non-replies emit neither', () => {
+  const xml = renderRssFeed(user, [post({ inReplyTo: 'https://a.ex/1' }), post({ id: 'p2', guid: 'guid-2', inReplyTo: 'bare-guid-ref' }), post({ id: 'p3', guid: 'guid-3' })], ctx)
+  expect(xml).toContain('<source:inReplyTo>https://a.ex/1</source:inReplyTo>')
+  expect(xml).toContain('<thr:in-reply-to ref="https://a.ex/1" href="https://a.ex/1"/>')
+  expect(xml).toContain('<source:inReplyTo isPermaLink="false">bare-guid-ref</source:inReplyTo>')
+  expect(xml.match(/source:inReplyTo/g)!.length).toBe(4) // 2 open + 2 close tags — p3 emits none
+})

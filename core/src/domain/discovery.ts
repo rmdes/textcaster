@@ -51,7 +51,9 @@ export function discoverFeed(html: string, pageUrl: string): Discovered {
       // suspenders so a name that duplicates the body never becomes a title.
       const title = e.name && e.name !== content ? e.name : null
       const rawDate = typeof e.published === 'string' ? e.published : ''
-      return toParsedItem(e.uid ?? e.url, title, content, e.url ?? null, rawDate, now)
+      const irt = e['in-reply-to']
+      const inReplyTo = Array.isArray(irt) ? (typeof irt[0] === 'string' ? irt[0] : null) : typeof irt === 'string' ? irt : null
+      return toParsedItem(e.uid ?? e.url, title, content, e.url ?? null, rawDate, now, inReplyTo)
     })
 
   return { feedUrl, hentries }

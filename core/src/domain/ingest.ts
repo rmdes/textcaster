@@ -45,6 +45,12 @@ function toIsoOrNow(raw: string, now: string): string {
   return Number.isNaN(d.getTime()) ? now : d.toISOString()
 }
 
+// source:inReplyTo (Textcasting) preferred, thr:in-reply-to (RFC 4685) fallback.
+// Shapes probed against feedsmith 2.9.6; Atom exposes thr only (no sourceNs).
+function itemInReplyTo(it: { sourceNs?: { inReplyTo?: { value?: string } }; thr?: { inReplyTos?: Array<{ ref?: string; href?: string }> } }): string | null {
+  return it.sourceNs?.inReplyTo?.value ?? it.thr?.inReplyTos?.[0]?.ref ?? it.thr?.inReplyTos?.[0]?.href ?? null
+}
+
 export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string, inReplyTo: string | null = null): ParsedItem {
   return { guid: guid ?? url ?? fallbackGuid(title, content, rawDate), title, content, url, publishedAt: toIsoOrNow(rawDate, now), inReplyTo }
 }
@@ -71,7 +77,7 @@ export async function parseFeedWithMeta(body: string): Promise<{ items: ParsedIt
   if (parsed.format === 'atom') {
     const items = (parsed.feed.entries ?? []).map((it) => {
       const url = it.links?.find((l) => l.href && (!l.rel || l.rel === 'alternate'))?.href ?? null
-      return toParsedItem(it.id, it.title ?? null, it.content ?? it.summary ?? '', url, it.published ?? it.updated ?? '', now)
+      return toParsedItem(it.id, it.title ?? null, it.content ?? it.summary ?? '', url, it.published ?? it.updated ?? '', now, itemInReplyTo(it))
     })
     return { items, discovery: { ...linksToDiscovery(parsed.feed.links), cloud: null } }
   }
@@ -81,7 +87,7 @@ export async function parseFeedWithMeta(body: string): Promise<{ items: ParsedIt
     return { items, discovery: NO_DISCOVERY }
   }
   const items = (parsed.feed.items ?? []).map((it) =>
-    toParsedItem(it.guid?.value, it.title ?? null, it.description ?? it.content?.encoded ?? '', it.link ?? null, it.pubDate ?? '', now))
+    toParsedItem(it.guid?.value, it.title ?? null, it.description ?? it.content?.encoded ?? '', it.link ?? null, it.pubDate ?? '', now, itemInReplyTo(it)))
   const c = parsed.feed.cloud
   const cloud = c && typeof c.domain === 'string' && typeof c.path === 'string' && c.protocol === 'http-post' && typeof c.port === 'number'
     ? { domain: c.domain, port: c.port, path: c.path, protocol: c.protocol }
