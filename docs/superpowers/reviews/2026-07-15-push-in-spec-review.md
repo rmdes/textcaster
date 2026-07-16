@@ -1,5 +1,46 @@
 # Spec review — push-in (ponytail lens + adversarial), pre-implementation
 
+## Re-review of rev 2 (f200420): PASSES with one amendment
+
+H1–H5, both ponytail shrinks, and all pins landed correctly (four-algorithm
+verification with the sha1 case test-pinned, 202-discard-log, 10-minute
+pending expiry with the UNEXPIRED gate, token/secret stability with a
+contract pin, the 30s thin-ping floor, `findPushSubscription`,
+`parseFeedWithMeta` one-parse, the money-test lookupFn warning). One new
+composition trap and two half-sentence pins:
+
+### R1 — §4.2's wording defeats the H4 fix it composes with
+
+§4.2 says: "generate token (32 hex) + secret (32 hex); **upsert** pending
+row; form-POST the hub: `hub.callback=…/<token>`" — while the H4 upsert
+"never overwrites token/secret". On any retry or renewal (a row already
+exists), the code as described generates FRESH values, the DO UPDATE
+silently discards them, and the hub POST is built from the fresh token in
+hand — so the hub verifies and delivers to a callback URL whose token our
+DB does not contain. Verification 404s; if it ever succeeds, every fat ping
+404s. **Pin in §4.2: generate token/secret only when no (user, mode) row
+exists; otherwise read the stored row and build the hub POST from its
+token/secret.** (Or: upsert returns the winning row and the POST uses
+that.) This is exactly the debt-batch R1 pattern — two individually-correct
+fixes composing into a bug.
+
+### Two half-sentence pins
+
+1. **Renewal verification on an active row:** §5's GET handler says "flip
+   pending → active, store expiry". An implementer may gate on
+   `state === 'pending'` and 404 the hub's re-verification GET during
+   renewals. Pin: the handler accepts a token+topic match regardless of
+   state; sets active and the granted expiry.
+2. **Link-header discovery crosses the §6 seam:** header links live on the
+   fetch Response inside `ingestRemoteUser`; body discovery comes from
+   `parseFeedWithMeta`. Pin that `ingestRemoteUser` merges both into the
+   discovery it returns, or the subscribe engine silently loses header-only
+   publishers — the case §1 explicitly calls out as common.
+
+With the §4.2 amendment and the two pins, write the plan.
+
+---
+
 Date: 2026-07-15
 Target: `docs/superpowers/specs/2026-07-15-textcaster-push-in-design.md` (52ad480)
 Claims verified against milestone-1 code (push.ts, push-guard.ts, sqlite.ts,

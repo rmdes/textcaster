@@ -1,5 +1,36 @@
 # Spec review — following/filtering (ponytail + adversarial), pre-implementation
 
+## Re-review of rev 2 (80c74a1): APPROVED for planning
+
+H1–H6 and all five pins landed correctly and precisely:
+
+- H1: recursive flatten; folder outlines (no `xmlUrl`) are structure, not
+  skips — stated exactly right.
+- H2: case 2 compares against both `feedUrls()` URLs, exact equality only.
+- H3: base truncated to 61 (64 − 3 suffix chars for up to `-50`), in-batch
+  `Set` + `HandleTakenError`, 50-attempt cap then skip. The arithmetic is
+  right: `-50` is 3 chars, 61+3 = 64 = `HANDLE_RE` ceiling.
+- H4: local outlines omitted without `PUBLIC_URL`.
+- H5: 1000-outline cap, overflow counted skipped.
+- H6: both staleness directions stated with the explicit no-refetch-loop.
+- Pins: 400-before-404 with unknown-handle test, 200-not-201 rationale,
+  content-type-agnostic import, remote-author lens pinned, and
+  `posts_author_pub_idx (author_id, published_at, id)` ships with migration 4.
+
+One index note for the plan-writer (not a blocker — the index is correct as
+written): the composite `(author_id, published_at, id)` serves the
+`author=` lens directly, but the `followed_by=` lens
+(`author_id IN (subquery)`) uses it per-author-id and still merge-sorts
+across the matched authors by `(published_at, id)` — SQLite will likely scan
+`posts_published_idx` and filter instead. That's fine at spine scale (the
+old behavior, now bounded by the index on the author lens), just don't let a
+plan task claim the new index makes the followed lens index-ordered; it
+doesn't, and it doesn't need to.
+
+Ready for writing-plans.
+
+---
+
 Date: 2026-07-16
 Target: `docs/superpowers/specs/2026-07-16-textcaster-following-design.md` (d8f9f83)
 Verified against the real code (core/src/) and the installed feedsmith OPML API.
@@ -99,9 +130,17 @@ nobody "fixes" it with a refetch loop.
 - Migration runner applies 3→4 generically; service-layer kind enforcement
   has the `ensureLocalUser` precedent; idempotent `addFollow` via ON
   CONFLICT DO NOTHING has the posts-table precedent; 1 MB `bodyLimit` is the
-  same hono middleware already on four routes; import inherits the http(s)
-  scheme check so garbage xmlUrls skip rather than create broken users.
+  same hono middleware already on four routes.
 - SSE replay staying firehose is correct with client-side filtering.
+
+**Correction (found during plan review, P1):** this list originally also
+claimed "import inherits the http(s) scheme check so garbage xmlUrls skip." That
+is WRONG. `isValidFeedUrl` lives only in the `POST /users` API route; the import
+path calls `service.addRemoteUser` directly, which does no URL validation — so a
+non-http(s) `xmlUrl` would create a permanent unfetchable user (`new URL()`
+throws every poll cycle, forever, no self-heal). The plan's Task 6 adds an
+explicit `isHttpUrl` guard in `importFollowingOpml` before the resolution cases,
+with a garbage-`xmlUrl` test asserting `skipped` and zero users created.
 
 ## What must change before planning
 
