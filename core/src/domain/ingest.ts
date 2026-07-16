@@ -93,12 +93,17 @@ export function parseLinkHeader(header: string | null): { hubs: string[]; self: 
   if (!header) return { hubs: [], self: null }
   const hubs: string[] = []
   let self: string | null = null
-  for (const part of header.split(',')) {
-    const m = /<([^>]+)>\s*;\s*rel="?([^";]+)"?/.exec(part.trim())
-    if (!m) continue
-    const rels = m[2].split(/\s+/)
-    if (rels.includes('hub')) hubs.push(m[1])
-    if (rels.includes('self') && !self) self = m[1]
+  // Split on commas outside quotes (a quoted param may contain one), then find
+  // rel= anywhere among the params — not just first — scanning only past the
+  // <url> so a rel= inside the URL's query string can't match.
+  for (const part of header.match(/(?:[^,"]|"[^"]*")+/g) ?? []) {
+    const urlM = /<([^>]+)>/.exec(part)
+    if (!urlM) continue
+    const relM = /(?:^|;)\s*rel\s*=\s*"?([^";]+)"?/.exec(part.slice(urlM.index + urlM[0].length))
+    if (!relM) continue
+    const rels = relM[1].split(/\s+/)
+    if (rels.includes('hub')) hubs.push(urlM[1])
+    if (rels.includes('self') && !self) self = urlM[1]
   }
   return { hubs, self }
 }

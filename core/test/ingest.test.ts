@@ -283,6 +283,15 @@ test('parseLinkHeader extracts hub and self rels', () => {
   expect(parseLinkHeader(null)).toEqual({ hubs: [], self: null })
 })
 
+test('parseLinkHeader handles rel not-first, commas inside quoted params, and rel= inside the URL', () => {
+  // rel is not the first parameter (W3C examples routinely put type first)
+  expect(parseLinkHeader('<https://hub.example.com/hub>; type="application/rss+xml"; rel="hub"')).toEqual({ hubs: ['https://hub.example.com/hub'], self: null })
+  // a comma inside a quoted param must not split the part
+  expect(parseLinkHeader('<https://hub.example.com/hub>; rel="hub"; title="a, b", <https://blog.example.com/f.xml>; rel="self"')).toEqual({ hubs: ['https://hub.example.com/hub'], self: 'https://blog.example.com/f.xml' })
+  // rel=hub appearing inside the URL itself is not a rel parameter
+  expect(parseLinkHeader('<https://x.example.com/?rel=hub>; rel="alternate"')).toEqual({ hubs: [], self: null })
+})
+
 test('ingestRemoteUser returns discovery merging Link headers with body metadata', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()

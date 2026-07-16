@@ -145,6 +145,41 @@ test('renewDue re-subscribes websub near lease end and re-registers rsscloud nea
   expect(calls.some((c) => c.url === 'http://cloudy.example.com:5337/rsscloud/pleaseNotify')).toBe(true)
 })
 
+test('active rsscloud upgrades to websub when the feed starts advertising a hub; websub never downgrades', async () => {
+  const { repo, config } = await pushInSetup()
+  const user = await repo.createRemoteUser({ handle: 'blog', displayName: 'B', feedUrl: 'https://blog.example.com/feed.xml' })
+  await repo.upsertPushSubscription({ id: 'c1', userId: user.id, mode: 'rsscloud', endpoint: 'http://blog.example.com:5337/rsscloud/pleaseNotify', topic: 'https://blog.example.com/feed.xml', callbackToken: 'tok-c', secret: null, state: 'active', expiresAt: '2027-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+  const fetchFn = vi.fn(async () => new Response('', { status: 202 }))
+  const pushIn = createPushIn({ repo, config, fetchFn: fetchFn as unknown as typeof fetch, lookupFn: publicLookup })
+
+  await pushIn.maybeSubscribe(user, HUB_DISCOVERY) // feed now advertises a hub
+  const websub = await repo.findPushSubscription({ userId: user.id, mode: 'websub' })
+  expect(websub?.state).toBe('pending') // upgrade attempted despite the live rsscloud row
+
+  // the hub verifies → websub activates → the rsscloud fallback row is deleted
+  await pushIn.handleWebSubVerification(websub!.callbackToken, { 'hub.mode': 'subscribe', 'hub.topic': websub!.topic, 'hub.challenge': 'ch', 'hub.lease_seconds': '3600' })
+  expect(await repo.findPushSubscription({ userId: user.id, mode: 'rsscloud' })).toBeUndefined()
+  expect((await repo.findPushSubscription({ userId: user.id, mode: 'websub' }))?.state).toBe('active')
+
+  // reverse direction: an active websub sub is never replaced by a cloud fallback
+  const user2 = await repo.createRemoteUser({ handle: 'w', displayName: 'W', feedUrl: 'https://w.example.com/feed.xml' })
+  await repo.upsertPushSubscription({ id: 'w9', userId: user2.id, mode: 'websub', endpoint: 'https://hub.example.com/hub', topic: 'https://w.example.com/feed.xml', callbackToken: 'tok-w9', secret: 's', state: 'active', expiresAt: '2027-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+  await pushIn.maybeSubscribe(user2, { hubs: [], self: null, cloud: { domain: 'w.example.com', port: 5337, path: '/rsscloud/pleaseNotify', protocol: 'http-post' } })
+  expect(await repo.findPushSubscription({ userId: user2.id, mode: 'rsscloud' })).toBeUndefined()
+})
+
+test('renewDue floors retries per subscription — a dead hub is retried hourly, not every tick', async () => {
+  const { repo, config } = await pushInSetup()
+  const u = await repo.createRemoteUser({ handle: 'blog', displayName: 'B', feedUrl: 'https://blog.example.com/feed.xml' })
+  const soon = new Date(Date.now() + 3600 * 1000).toISOString()
+  await repo.upsertPushSubscription({ id: 'w1', userId: u.id, mode: 'websub', endpoint: 'https://hub.example.com/hub', topic: 'https://blog.example.com/feed.xml', callbackToken: 'tok-w', secret: 'sec', state: 'active', expiresAt: soon, createdAt: '2026-01-01T00:00:00.000Z' })
+  const fetchFn = vi.fn(async () => new Response('', { status: 502 })) // hub is down
+  const pushIn = createPushIn({ repo, config, fetchFn: fetchFn as unknown as typeof fetch, lookupFn: publicLookup })
+  await pushIn.renewDue()
+  await pushIn.renewDue() // same tick-cadence call — must be floored, not re-sent
+  expect(fetchFn).toHaveBeenCalledTimes(1)
+})
+
 test('runPollCycle slow-polls push-active feeds and discovers on polled ones', async () => {
   const { repo, bus, config } = await pushInSetup()
   const pushed = await repo.createRemoteUser({ handle: 'pushed', displayName: 'P', feedUrl: 'https://pushed.example.com/feed.xml' })

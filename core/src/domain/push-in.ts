@@ -43,6 +43,7 @@ export const WEBSUB_LEASE_SECONDS = 864000 // 10 days requested
 export const WEBSUB_RENEW_HORIZON_MS = 86_400_000 // renew when < 1 day left
 export const RSSCLOUD_TTL_MS = 90_000_000 // 25 h
 export const RSSCLOUD_RENEW_HORIZON_MS = 7_200_000 // renew when < 2 h left
+export const RENEW_RETRY_FLOOR_MS = 3_600_000 // retry a due renewal at most hourly, not every tick
 
 export function pushInEffective(config: Config): boolean {
   return config.pushIn && config.publicUrl !== null
@@ -70,6 +71,7 @@ export function createPushIn(deps: PushInDeps): PushIn {
   const fetchFn = deps.fetchFn ?? fetch
   // H5: in-memory floor — a ping storm costs the attacker requests and us nothing.
   const lastThinFetch = new Map<string, number>()
+  const lastRenewAttempt = new Map<string, number>()
   const THIN_PING_FLOOR_MS = 30_000
 
   // R1 (spec §4.2): the stored row's token/secret are the subscription's
@@ -148,8 +150,11 @@ export function createPushIn(deps: PushInDeps): PushIn {
       try {
         if (!pushInEffective(config)) return
         const now = new Date().toISOString()
-        // H3 gate: only an UNEXPIRED pending/active row blocks a new attempt.
-        if (await repo.findPushSubscription({ userId: user.id }, { unexpiredAt: now })) return
+        // H3 gate: only an UNEXPIRED pending/active row blocks a new attempt —
+        // except the rsscloud fallback when the feed now advertises a hub:
+        // websub is preferred, so that combination upgrades instead of skipping.
+        const existing = await repo.findPushSubscription({ userId: user.id }, { unexpiredAt: now })
+        if (existing && !(existing.mode === 'rsscloud' && discovery.hubs.length > 0)) return
         const target = choosePushTarget(discovery, user.feedUrl ?? '')
         if (!target || !user.feedUrl) return
         await subscribe(user, target)
@@ -163,6 +168,13 @@ export function createPushIn(deps: PushInDeps): PushIn {
         const horizon = new Date(Date.now() + WEBSUB_RENEW_HORIZON_MS).toISOString()
         const due = await repo.listRenewablePushSubscriptions(horizon)
         for (const sub of due) {
+          // A due sub against a dead hub would otherwise re-POST every poll tick
+          // for up to the lease's final day. Floor retries per sub, mirroring
+          // lastThinFetch. ponytail: in-memory (resets on restart) and never
+          // pruned — bounded by subscription count, it's a rate floor, not state.
+          const last = lastRenewAttempt.get(sub.id)
+          if (last !== undefined && Date.now() - last < RENEW_RETRY_FLOOR_MS) continue
+          lastRenewAttempt.set(sub.id, Date.now())
           try {
             if (sub.mode === 'websub') {
               await sendWebSubSubscribe({ userId: sub.userId, endpoint: sub.endpoint, topic: sub.topic, token: sub.callbackToken, secret: sub.secret })
@@ -193,6 +205,9 @@ export function createPushIn(deps: PushInDeps): PushIn {
       const granted = Number(query['hub.lease_seconds'])
       const leaseSeconds = Number.isInteger(granted) && granted > 0 ? granted : WEBSUB_LEASE_SECONDS
       await repo.upsertPushSubscription({ ...sub, state: 'active', expiresAt: new Date(Date.now() + leaseSeconds * 1000).toISOString() })
+      // Upgrade complete: websub is live, so the rsscloud fallback row (if any) retires.
+      const cloudRow = await repo.findPushSubscription({ userId: sub.userId, mode: 'rsscloud' })
+      if (cloudRow) await repo.deletePushSubscription(cloudRow.id)
       return { status: 200, body: query['hub.challenge'] }
     },
     async handleFatPing(token: string, body: string, signatureHeader: string | null, io: { bus: EventBus }): Promise<number> {
