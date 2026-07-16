@@ -8,8 +8,40 @@
 	import PostBody from '$lib/PostBody.svelte'
 	import MarkdownComposer from '$lib/MarkdownComposer.svelte'
 	import { keepEvent } from '$lib/lens'
+	import { enhance } from '$app/forms'
+	import type { SubmitFunction } from '@sveltejs/kit'
+	import { loadDraft, saveDraft } from '$lib/draft'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// Reply draft, keyed per post: navigating away and back resumes the reply.
+	// Cleared only on confirmed submit success (handle survives — it's identity).
+	const draftKey = $derived(`reply:${data.postId}`)
+	let handle = $state('')
+	let content = $state('')
+	let replyError = $state('')
+	let restored = $state(false)
+	$effect(() => {
+		const d = loadDraft(draftKey)
+		handle = d.handle ?? ''
+		content = d.content ?? ''
+		restored = true
+	})
+	$effect(() => {
+		if (restored) saveDraft(draftKey, { handle, content })
+	})
+	const submitReply: SubmitFunction = () =>
+		async ({ result, update }) => {
+			if (result.type === 'failure') {
+				replyError = typeof result.data?.error === 'string' ? result.data.error : 'Something went wrong'
+			} else if (result.type === 'error') {
+				replyError = 'Something went wrong'
+			} else {
+				replyError = ''
+				content = ''
+			}
+			await update()
+		}
 	let live = $state<TimelineEntry[]>([])
 	const posts = $derived([...data.thread, ...live])
 
@@ -72,9 +104,10 @@
 
 	<details class="panel" open>
 		<summary>Reply</summary>
-		<form method="POST" action="?/reply" class="composer">
-			<input name="handle" placeholder="your handle" required />
-			<MarkdownComposer placeholder="write a reply" />
+		{#if replyError}<p class="error" role="alert">{replyError}</p>{/if}
+		<form method="POST" action="?/reply" class="composer" use:enhance={submitReply}>
+			<input name="handle" placeholder="your handle" required bind:value={handle} />
+			<MarkdownComposer placeholder="write a reply" bind:value={content} />
 			<button>Reply</button>
 		</form>
 	</details>

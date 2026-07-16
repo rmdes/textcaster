@@ -5,12 +5,12 @@
 	let {
 		name = 'content',
 		placeholder = '',
-		required = true
-	}: { name?: string; placeholder?: string; required?: boolean } = $props()
-
-	// One value binds BOTH branches: whatever was typed pre-enhancement seeds
-	// the editor; Carta's own textarea then carries the form semantics.
-	let value = $state('')
+		required = true,
+		// Bindable so parents can seed from / persist to a draft store.
+		// One value binds BOTH branches: whatever was typed pre-enhancement seeds
+		// the editor; Carta's own textarea then carries the form semantics.
+		value = $bindable('')
+	}: { name?: string; placeholder?: string; required?: boolean; value?: string } = $props()
 
 	// Post-mount flag (H4): never gate on `browser` — SSR and the first client
 	// render must both show the plain textarea or hydration mismatches. The

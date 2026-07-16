@@ -3,7 +3,7 @@
 	import type { TimelineEntry } from '$lib/types'
 	import LiveTimeline from '$lib/LiveTimeline.svelte'
 	import ThemeToggle from '$lib/ThemeToggle.svelte'
-	import MarkdownComposer from '$lib/MarkdownComposer.svelte'
+	import ComposerDialog from '$lib/ComposerDialog.svelte'
 	import ReplyTree from '$lib/ReplyTree.svelte'
 	import FeedIcon from '$lib/FeedIcon.svelte'
 	import Avatar from '$lib/Avatar.svelte'
@@ -42,15 +42,14 @@
 			<ThemeToggle />
 		</header>
 
-		<details class="panel" open>
-			<summary>New post</summary>
-			<form method="POST" action="?/compose" class="composer">
-				<input name="handle" placeholder="your handle" required />
-				<input name="displayName" placeholder="display name (optional)" />
-				<MarkdownComposer placeholder="what's happening?" />
-				<button>Post</button>
-			</form>
-		</details>
+		<ComposerDialog
+			draftKey="compose"
+			action="?/compose"
+			title="New post"
+			submitLabel="Post"
+			placeholder="what's happening?"
+			showDisplayName
+		/>
 
 		<details class="panel">
 			<summary>Add remote user</summary>
