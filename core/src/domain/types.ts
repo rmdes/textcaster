@@ -27,6 +27,8 @@ export interface Post {
   inReplyTo?: string | null
   inReplyToPostId?: string | null
   threadRootId?: string | null
+  sourceName?: string | null      // per-item attribution from aggregate feeds (RSS <source url>name</source>)
+  sourceFeedUrl?: string | null
 }
 
 export interface NewLocalUser { handle: string; displayName: string }

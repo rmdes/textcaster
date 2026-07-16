@@ -505,3 +505,10 @@ a.wedge.light {
 .post .body.expanded {
 	max-height: none;
 }
+
+/* Per-item source attribution (aggregate feeds): the item's real author. */
+
+.via {
+	color: var(--color-secondary);
+	font-size: 0.875rem;
+}

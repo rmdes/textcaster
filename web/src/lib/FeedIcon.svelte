@@ -2,18 +2,23 @@
 	import type { TimelineEntry } from './types'
 
 	// Ported from rss.chat theme 0.5.323-0.5.328 (live, 7/16/26): a feed icon
-	// after the byline linking to the author's feed. Remote authors link to
-	// their canonical feed; local authors to our proxied RSS.
-	let { author }: { author: TimelineEntry['author'] } = $props()
-	// Scheme guard (defense in depth): every feedUrl write path is http(s)-only
-	// already, but a javascript: URL here would be click-to-XSS if that ever slips.
-	const safeFeed = $derived(
-		author.feedUrl && /^https?:\/\//i.test(author.feedUrl) ? author.feedUrl : null
-	)
+	// after the byline linking to the author's feed. Items from aggregate feeds
+	// (RSS <source>) link their PER-ITEM source feed — the item's real author —
+	// else remote authors link their canonical feed, locals our proxied RSS.
+	let {
+		author,
+		sourceName = null,
+		sourceFeedUrl = null
+	}: { author: TimelineEntry['author']; sourceName?: string | null; sourceFeedUrl?: string | null } =
+		$props()
+	// Scheme guard (defense in depth): every write path is http(s)-only already,
+	// but a javascript: URL here would be click-to-XSS if that ever slips.
+	const safe = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u) ? u : null)
 	const href = $derived(
-		author.kind === 'remote' && safeFeed ? safeFeed : `/u/${author.handle}/feed.xml`
+		safe(sourceFeedUrl) ??
+			(author.kind === 'remote' && safe(author.feedUrl) ? author.feedUrl : `/u/${author.handle}/feed.xml`)
 	)
-	const label = $derived(`${author.displayName}'s feed`)
+	const label = $derived(`${sourceName ?? author.displayName}'s feed`)
 </script>
 
 <a class="feed-icon" {href} target="_blank" rel="noreferrer" title={label} aria-label={label}>

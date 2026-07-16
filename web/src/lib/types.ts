@@ -10,4 +10,6 @@ export interface TimelineEntry {
 	inReplyToPostId?: string | null
 	threadRootId?: string | null
 	replyCount?: number
+	sourceName?: string | null
+	sourceFeedUrl?: string | null
 }

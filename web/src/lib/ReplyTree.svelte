@@ -32,7 +32,7 @@
 					<span class="wedge light" aria-hidden="true">▸</span>
 				{/if}
 				<strong>{reply.author.displayName}</strong>
-				<a class="handle" href="/u/{reply.author.handle}">@{reply.author.handle}</a>
+				<a class="handle" href="/u/{reply.author.handle}">@{reply.author.handle}</a> {#if reply.sourceName}<span class="via">from {reply.sourceName}</span>{/if}
 			</div>
 			{#if reply.title}<h3 class="title">{reply.title}</h3>{/if}
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -- click-to-expand is a pointer convenience; keyboard/AT users reach the full text via the conversation link -->

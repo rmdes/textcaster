@@ -91,7 +91,7 @@
 							<span class="wedge light" aria-hidden="true">▸</span>
 						{/if}
 						<strong>{post.author.displayName}</strong>
-						<a class="handle" href="/u/{post.author.handle}">@{post.author.handle}</a>
+						<a class="handle" href="/u/{post.author.handle}">@{post.author.handle}</a> {#if post.sourceName}<span class="via">from {post.sourceName}</span>{/if}
 						<span class="kind">{post.source}</span>
 						<time datetime={post.publishedAt}>{post.publishedAt.slice(0, 10)}</time>
 						<FeedIcon author={post.author} />

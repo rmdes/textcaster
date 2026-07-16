@@ -48,7 +48,7 @@
 			<li class="post" class:remote={post.source === 'remote'} class:highlight={post.id === data.postId}>
 				<div class="byline">
 					<strong>{post.author.displayName}</strong>
-					<a class="handle" href="/u/{post.author.handle}">@{post.author.handle}</a>
+					<a class="handle" href="/u/{post.author.handle}">@{post.author.handle}</a> {#if post.sourceName}<span class="via">from {post.sourceName}</span>{/if}
 					<span class="kind">{post.source}</span>
 				</div>
 				{#if post.title}<h2 class="title">{post.title}</h2>{/if}

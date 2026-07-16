@@ -117,6 +117,21 @@ test('first sync of a feed inserts posts but stays silent on the bus; later sync
   expect(seen).toHaveBeenCalledTimes(1)
 })
 
+test('an item-level <source> (aggregate feeds like rss.chat) carries per-item attribution', async () => {
+  const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>everyone</title>
+<item><guid>g1</guid><description>d</description><source url="https://rss.chat/users/dave/rss.xml">Dave Winer</source></item>
+<item><guid>g2</guid><description>d</description></item>
+<item><guid>g3</guid><description>d</description><source url="javascript:alert(1)">Evil</source></item>
+</channel></rss>`
+  const { items } = await parseFeedWithMeta(rss)
+  expect(items[0].sourceName).toBe('Dave Winer')
+  expect(items[0].sourceFeedUrl).toBe('https://rss.chat/users/dave/rss.xml')
+  expect(items[1].sourceName).toBeNull()
+  expect(items[1].sourceFeedUrl).toBeNull()
+  expect(items[2].sourceName).toBe('Evil') // name is inert text
+  expect(items[2].sourceFeedUrl).toBeNull() // non-http(s) url never becomes an href
+})
+
 test('a non-http(s) item link is dropped from url but still feeds the guid chain raw', async () => {
   const rss = `<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
 <item><title>x</title><link>javascript:alert(1)</link><description>d</description></item>
@@ -319,8 +334,8 @@ test('ingestItems is the shared insert path (no fetch involved)', async () => {
   await repo.insertPost({ id: 'seed', authorId: user.id, source: 'remote', guid: 'seed-g', title: null, content: 'seed', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' }) // author has posts → emits live
   const seen = vi.fn()
   bus.onNewPost(seen)
-  const n = await ingestItems(repo, bus, user, [{ guid: 'fp1', title: null, content: 'pushed body', url: null, publishedAt: '2026-01-02T00:00:00.000Z', inReplyTo: null }])
+  const n = await ingestItems(repo, bus, user, [{ guid: 'fp1', title: null, content: 'pushed body', url: null, publishedAt: '2026-01-02T00:00:00.000Z', inReplyTo: null, sourceName: null, sourceFeedUrl: null }])
   expect(n).toBe(1)
   expect(seen).toHaveBeenCalledTimes(1)
-  expect(await ingestItems(repo, bus, user, [{ guid: 'fp1', title: null, content: 'pushed body', url: null, publishedAt: '2026-01-02T00:00:00.000Z', inReplyTo: null }])).toBe(0)
+  expect(await ingestItems(repo, bus, user, [{ guid: 'fp1', title: null, content: 'pushed body', url: null, publishedAt: '2026-01-02T00:00:00.000Z', inReplyTo: null, sourceName: null, sourceFeedUrl: null }])).toBe(0)
 })

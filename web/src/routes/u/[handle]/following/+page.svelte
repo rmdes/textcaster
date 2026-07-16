@@ -111,9 +111,9 @@
 							<span class="wedge light" aria-hidden="true">▸</span>
 						{/if}
 						<strong>{post.author.displayName}</strong>
-						<a class="handle" href="/u/{post.author.handle}">@{post.author.handle}</a>
+						<a class="handle" href="/u/{post.author.handle}">@{post.author.handle}</a> {#if post.sourceName}<span class="via">from {post.sourceName}</span>{/if}
 						<span class="kind">{post.source}</span>
-						<FeedIcon author={post.author} />
+						<FeedIcon author={post.author} sourceName={post.sourceName} sourceFeedUrl={post.sourceFeedUrl} />
 					</div>
 					{#if post.title}<h3 class="title">{post.title}</h3>{/if}
 					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -- click-to-expand is a pointer convenience; keyboard/AT users reach the full text via the conversation link -->

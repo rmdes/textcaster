@@ -7,7 +7,7 @@ import { discoverFeed } from './discovery.ts'
 import { checkCallbackUrl } from './push-guard.ts'
 import type { LookupFn } from './push-guard.ts'
 
-export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string; inReplyTo: string | null }
+export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string; inReplyTo: string | null; sourceName: string | null; sourceFeedUrl: string | null }
 
 export interface FeedDiscovery {
   hubs: string[]
@@ -51,13 +51,25 @@ function itemInReplyTo(it: { sourceNs?: { inReplyTo?: { value?: string } }; thr?
   return it.sourceNs?.inReplyTo?.value ?? it.thr?.inReplyTos?.[0]?.ref ?? it.thr?.inReplyTos?.[0]?.href ?? null
 }
 
-export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string, inReplyTo: string | null = null): ParsedItem {
+const httpOnly = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u) ? u : null)
+
+export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string, inReplyTo: string | null = null, source?: { title?: string; url?: string }): ParsedItem {
   // Item links come from remote feed content and end up as <a href> in the web
   // client — only http(s) survives (a javascript: link would be click-to-XSS).
   // The guid fallback chain keeps the RAW value: it's an opaque dedup id, and
   // changing its derivation would re-ingest every existing item under a new id.
-  const safeUrl = url && /^https?:\/\//i.test(url) ? url : null
-  return { guid: guid ?? url ?? fallbackGuid(title, content, rawDate), title, content, url: safeUrl, publishedAt: toIsoOrNow(rawDate, now), inReplyTo }
+  return {
+    guid: guid ?? url ?? fallbackGuid(title, content, rawDate),
+    title,
+    content,
+    url: httpOnly(url),
+    publishedAt: toIsoOrNow(rawDate, now),
+    inReplyTo,
+    // RSS core <source url>name</source> — per-item attribution in aggregate
+    // feeds (rss.chat's firehose). The url renders as an href: http(s) only.
+    sourceName: source?.title ?? null,
+    sourceFeedUrl: httpOnly(source?.url),
+  }
 }
 
 type ChannelLink = { href?: string; rel?: string }
@@ -92,7 +104,7 @@ export async function parseFeedWithMeta(body: string): Promise<{ items: ParsedIt
     return { items, discovery: NO_DISCOVERY }
   }
   const items = (parsed.feed.items ?? []).map((it) =>
-    toParsedItem(it.guid?.value, it.title ?? null, it.description ?? it.content?.encoded ?? '', it.link ?? null, it.pubDate ?? '', now, itemInReplyTo(it)))
+    toParsedItem(it.guid?.value, it.title ?? null, it.description ?? it.content?.encoded ?? '', it.link ?? null, it.pubDate ?? '', now, itemInReplyTo(it), it.source))
   const c = parsed.feed.cloud
   const cloud = c && typeof c.domain === 'string' && typeof c.path === 'string' && c.protocol === 'http-post' && typeof c.port === 'number'
     ? { domain: c.domain, port: c.port, path: c.path, protocol: c.protocol }
@@ -132,6 +144,7 @@ export async function ingestItems(repo: Repository, bus: EventBus, user: User, i
       content: item.content, url: item.url, publishedAt, createdAt: now.toISOString(),
       inReplyTo: item.inReplyTo, inReplyToPostId: target?.id ?? null,
       threadRootId: target ? target.threadRootId ?? target.id : null,
+      sourceName: item.sourceName, sourceFeedUrl: item.sourceFeedUrl,
     }
     if (await repo.insertPost(post)) {
       await repo.adoptOrphans(post)
