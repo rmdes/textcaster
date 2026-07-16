@@ -108,7 +108,7 @@ export class SqliteRepository implements Repository {
     const r = await this.db.selectFrom('posts').select('id').where('author_id', '=', authorId).executeTakeFirst()
     return r !== undefined
   }
-  async getTimeline(limit: number, before?: TimelineCursor): Promise<TimelineEntry[]> {
+  async getTimeline(limit: number, before?: TimelineCursor, filter?: { followedBy?: string; authorId?: string }): Promise<TimelineEntry[]> {
     let q = this.db
       .selectFrom('posts')
       .innerJoin('users', 'users.id', 'posts.author_id')
@@ -119,6 +119,13 @@ export class SqliteRepository implements Repository {
       .limit(limit)
     if (before) {
       q = q.where((eb) => eb(eb.refTuple('posts.published_at', 'posts.id'), '<', eb.tuple(before.publishedAt, before.id)))
+    }
+    if (filter?.followedBy) {
+      const followerId = filter.followedBy
+      q = q.where('posts.author_id', 'in', (eb) => eb.selectFrom('follows').select('followed_id').where('follower_id', '=', followerId))
+    }
+    if (filter?.authorId) {
+      q = q.where('posts.author_id', '=', filter.authorId)
     }
     const rows = await q.execute()
     return rows.map(joinedRowToEntry)

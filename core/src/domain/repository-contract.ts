@@ -272,5 +272,29 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       await repo.addFollow(a.id, a.id)
       expect((await repo.listFollowing(a.id)).map((u) => u.id)).toEqual([a.id])
     })
+
+    test('followedBy filter scopes the timeline to followed authors, paginating across boundaries', async () => {
+      const repo = await makeRepo()
+      const me = await repo.createLocalUser({ handle: 'me', displayName: 'Me' })
+      const x = await repo.createRemoteUser({ handle: 'x', displayName: 'X', feedUrl: 'https://ex.com/x.xml' })
+      const y = await repo.createRemoteUser({ handle: 'y', displayName: 'Y', feedUrl: 'https://ex.com/y.xml' })
+      await repo.addFollow(me.id, x.id) // follows X, not Y
+      const mk = (id: string, author: string, day: string) => repo.insertPost({ id, authorId: author, source: 'remote', guid: id, title: null, content: id, url: null, publishedAt: `2026-01-${day}T00:00:00.000Z`, createdAt: `2026-01-${day}T00:00:00.000Z` })
+      await mk('x1', x.id, '01'); await mk('y1', y.id, '02'); await mk('x2', x.id, '03'); await mk('y2', y.id, '04')
+      const page1 = await repo.getTimeline(1, undefined, { followedBy: me.id })
+      expect(page1.map((e) => e.id)).toEqual(['x2']) // newest followed post, Y excluded
+      const page2 = await repo.getTimeline(1, { publishedAt: page1[0].publishedAt, id: page1[0].id }, { followedBy: me.id })
+      expect(page2.map((e) => e.id)).toEqual(['x1'])
+    })
+
+    test('authorId filter scopes to one author (works for remote authors too)', async () => {
+      const repo = await makeRepo()
+      const x = await repo.createRemoteUser({ handle: 'x', displayName: 'X', feedUrl: 'https://ex.com/x.xml' })
+      const y = await repo.createRemoteUser({ handle: 'y', displayName: 'Y', feedUrl: 'https://ex.com/y.xml' })
+      await repo.insertPost({ id: 'x1', authorId: x.id, source: 'remote', guid: 'x1', title: null, content: 'x1', url: null, publishedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+      await repo.insertPost({ id: 'y1', authorId: y.id, source: 'remote', guid: 'y1', title: null, content: 'y1', url: null, publishedAt: '2026-01-02T00:00:00.000Z', createdAt: '2026-01-02T00:00:00.000Z' })
+      const tl = await repo.getTimeline(10, undefined, { authorId: x.id })
+      expect(tl.map((e) => e.id)).toEqual(['x1'])
+    })
   })
 }
