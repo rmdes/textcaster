@@ -92,3 +92,14 @@ test('same-slug outlines collide on handle and get suffixed (H3)', async () => {
   const handles = (await repo.listRemoteUsers()).map((u) => u.handle).sort()
   expect(handles).toEqual(['my-blog', 'my-blog-2'])
 })
+
+test('outlines beyond MAX_OUTLINES cap are counted as skipped (H5)', async () => {
+  const { repo, follower, deps } = await importSetup(null)
+  const outlines = Array.from({ length: 1001 }, (_, i) => `<outline type="rss" text="F${i}" xmlUrl="https://f${i}.example/feed.xml"/>`)
+  const opml = `<opml><body>${outlines.join('')}</body></opml>`
+  const r = await importFollowingOpml(deps, follower, opml)
+  expect(r.created + r.skipped).toBe(1001)
+  expect(r.skipped).toBeGreaterThanOrEqual(1)
+  expect(r.created).toBe(1000)
+  expect(r.skipped).toBe(1)
+})

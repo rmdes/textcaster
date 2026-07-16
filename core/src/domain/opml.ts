@@ -72,9 +72,10 @@ export async function importFollowingOpml(deps: ImportDeps, follower: User, body
   const byFeedUrl = new Map((await deps.listRemoteUsers()).map((u) => [u.feedUrl as string, u]))
   const seenUrls = new Set<string>()
   const assignedHandles = new Set<string>()
-  let followed = 0, created = 0, skipped = 0
+  const capped = flat.slice(0, MAX_OUTLINES)
+  let followed = 0, created = 0, skipped = flat.length - capped.length // H5: over-cap outlines count as skipped
 
-  for (const o of flat.slice(0, MAX_OUTLINES)) {
+  for (const o of capped) {
     const xmlUrl = o.xmlUrl as string
     if (seenUrls.has(xmlUrl)) { skipped++; continue } // duplicate xmlUrl in file
     seenUrls.add(xmlUrl)
