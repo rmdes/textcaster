@@ -38,8 +38,10 @@ export function discoverFeed(html: string, pageUrl: string): Discovered {
   }
 
   // h-feed: convert to JF2 (which drops implied p-names — H1) and map entries.
+  // A typed single entry is always itself, even when it carries children from nested
+  // microformats (e.g. h-card). Everything else takes children.
   const jf2 = mf2tojf2(parsed)
-  const entries: Jf2[] = jf2.children ?? (jf2.type === 'entry' ? [jf2] : [])
+  const entries: Jf2[] = jf2.type === 'entry' ? [jf2] : (jf2.children ?? [])
   const now = new Date().toISOString()
   const hentries = entries
     .filter((e) => e.type === 'entry')

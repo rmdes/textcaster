@@ -56,3 +56,9 @@ test('degenerate HTML (childless body) → nulls, never throws (spec §7)', () =
   expect(feedUrl).toBeNull()
   expect(hentries).toEqual([])
 })
+
+test('a single h-entry carrying a nested microformat (e.g. h-card) is still mapped', () => {
+  const html = `<div class="h-entry"><p class="e-content">hi</p><a class="u-url" href="https://s.ex/1">l</a><div class="h-card">Nested card</div></div>`
+  const { hentries } = discoverFeed(html, 'https://s.ex/')
+  expect(hentries.map((h) => h.url)).toEqual(['https://s.ex/1'])
+})
