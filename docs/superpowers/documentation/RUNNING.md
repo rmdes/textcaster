@@ -195,6 +195,12 @@ app for real (Docker/self-host/etc.), switch to `@sveltejs/adapter-node`
 first — dev mode (`npm run dev -w web`) streams fine as-is regardless of
 adapter.
 
+Serve production traffic over **HTTP/2** (any modern reverse proxy with TLS):
+over HTTP/1.1, browsers allow only 6 concurrent connections per origin and
+every open timeline tab holds one SSE stream. The web app releases a hidden
+tab's stream and replays missed posts when the tab returns, so tab count
+isn't fatal — but HTTP/2 removes the ceiling entirely.
+
 ## Manual verification
 
 ### Two-tab live test

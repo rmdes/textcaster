@@ -62,6 +62,38 @@ test('GET forwards the Last-Event-ID header upstream', async () => {
 	expect(new Headers(init.headers).get('Last-Event-ID')).toBe('post-42')
 })
 
+test('GET forwards ?last= as Last-Event-ID (fresh EventSource cannot send the header)', async () => {
+	const body = new ReadableStream({
+		start(controller) {
+			controller.close()
+		}
+	})
+	const fetchMock = vi.fn(async () => new Response(body, { status: 200 }))
+	global.fetch = fetchMock as unknown as typeof fetch
+
+	const request = new Request('http://x/stream?last=post-42')
+	await GET({ request } as never)
+
+	const init = (fetchMock as any).mock.calls[0][1] as RequestInit
+	expect(new Headers(init.headers).get('Last-Event-ID')).toBe('post-42')
+})
+
+test('GET prefers the Last-Event-ID header over ?last= when both are present', async () => {
+	const body = new ReadableStream({
+		start(controller) {
+			controller.close()
+		}
+	})
+	const fetchMock = vi.fn(async () => new Response(body, { status: 200 }))
+	global.fetch = fetchMock as unknown as typeof fetch
+
+	const request = new Request('http://x/stream?last=stale', { headers: { 'Last-Event-ID': 'post-42' } })
+	await GET({ request } as never)
+
+	const init = (fetchMock as any).mock.calls[0][1] as RequestInit
+	expect(new Headers(init.headers).get('Last-Event-ID')).toBe('post-42')
+})
+
 test('GET keeps the upstream content-type on error responses', async () => {
 	const fetchMock = vi.fn(
 		async () => new Response(JSON.stringify({ error: 'boom' }), { status: 500, headers: { 'content-type': 'application/json' } })
