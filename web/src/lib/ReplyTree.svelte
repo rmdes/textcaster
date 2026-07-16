@@ -2,6 +2,7 @@
 	import type { TimelineEntry } from './types'
 	import { childrenOf } from './wedge'
 	import { plaintext } from './plaintext'
+	import { toggleClamp } from './expand'
 	import Linkified from './Linkified.svelte'
 	import ReplyTree from './ReplyTree.svelte'
 
@@ -34,7 +35,8 @@
 				<a class="handle" href="/u/{reply.author.handle}">@{reply.author.handle}</a>
 			</div>
 			{#if reply.title}<h3 class="title">{reply.title}</h3>{/if}
-			<p><Linkified text={plaintext(reply.content)} /></p>
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -- click-to-expand is a pointer convenience; keyboard/AT users reach the full text via the conversation link -->
+			<p class="body" onclick={toggleClamp}><Linkified text={plaintext(reply.content)} /></p>
 			<a class="source" href="/post/{reply.id}">Reply</a>
 			{#if reply.url}<a class="source" href={reply.url} rel="noreferrer">source</a>{/if}
 			{#if open[reply.id]}

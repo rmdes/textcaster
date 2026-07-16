@@ -492,3 +492,16 @@ a.wedge.light {
 	width: 0.75rem;
 	height: 0.75rem;
 }
+
+/* Long posts clamp in timeline contexts; clicking the text unfolds them
+   (thread pages never clamp — they are the reading view). The decision
+   whether a post is actually clipped happens at click time, in JS. */
+
+.post .body {
+	max-height: 14rem;
+	overflow: hidden;
+}
+
+.post .body.expanded {
+	max-height: none;
+}

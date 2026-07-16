@@ -23,6 +23,8 @@
 	)
 </script>
 
+<svelte:head><title>Conversation — Textcaster</title></svelte:head>
+
 <LiveTimeline {onPost} />
 
 <div class="lens">

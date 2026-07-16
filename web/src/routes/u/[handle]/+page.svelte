@@ -7,6 +7,7 @@
 	import FeedIcon from '$lib/FeedIcon.svelte'
 	import { keepEvent } from '$lib/lens'
 	import { plaintext } from '$lib/plaintext'
+	import { toggleClamp } from '$lib/expand'
 	import Linkified from '$lib/Linkified.svelte'
 	import { hiddenIds, fetchThread } from '$lib/wedge'
 
@@ -27,6 +28,8 @@
 		else expanded[id] = await fetchThread(id)
 	}
 </script>
+
+<svelte:head><title>@{data.handle} — Textcaster</title></svelte:head>
 
 {#if data.isFirstPage && authorId}
 	<LiveTimeline {onPost} />
@@ -69,7 +72,8 @@
 					<span class="wedge light" aria-hidden="true">▸</span>
 				{/if}
 				{#if post.title}<h2 class="title">{post.title}</h2>{/if}
-				<p><Linkified text={plaintext(post.content)} /></p>
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -- click-to-expand is a pointer convenience; keyboard/AT users reach the full text via the conversation link -->
+				<p class="body" onclick={toggleClamp}><Linkified text={plaintext(post.content)} /></p>
 				<a class="source" href="/post/{post.id}">{post.replyCount || post.threadRootId || post.inReplyToPostId ? 'View conversation' : 'Reply'}</a>
 				{#if post.inReplyTo && !post.inReplyToPostId && post.inReplyTo.startsWith('http')}
 					<a class="source" href={post.inReplyTo} rel="noreferrer">in reply to ↗</a>
