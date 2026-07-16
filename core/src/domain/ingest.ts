@@ -118,14 +118,30 @@ export async function ingestItems(repo: Repository, bus: EventBus, user: User, i
   return inserted
 }
 
-async function fetchFeedBody(url: string, fetchFn: typeof fetch): Promise<{ body: string; res: Response }> {
-  const res = await fetchFn(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: FEED_FETCH_HEADERS })
-  const contentLength = Number(res.headers.get('content-length') ?? '0')
-  if (contentLength > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${contentLength} bytes`)
-  // ponytail: cap rejects oversized bodies but only after buffering them; stream + abort past the cap if memory ever matters
-  const body = await res.text()
-  if (Buffer.byteLength(body) > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${Buffer.byteLength(body)} bytes`)
-  return { body, res }
+const MAX_REDIRECTS = 5
+
+// SSRF guard: validates the initial URL AND every redirect hop before fetching it.
+// redirect: 'manual' means fetch never follows a Location on its own — each hop is
+// re-validated by checkCallbackUrl at the top of the loop before we touch it.
+async function fetchFeedBody(url: string, fetchFn: typeof fetch, lookupFn?: LookupFn): Promise<{ body: string; res: Response }> {
+  let current = url
+  for (let hop = 0; ; hop++) {
+    const guard = await checkCallbackUrl(current, lookupFn) // SSRF: validate initial URL + every redirect target
+    if (!guard.ok) throw new Error(`blocked fetch to ${current}: ${guard.reason}`)
+    const res = await fetchFn(current, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: FEED_FETCH_HEADERS, redirect: 'manual' })
+    const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null
+    if (location) {
+      if (hop >= MAX_REDIRECTS) throw new Error(`too many redirects fetching ${url}`)
+      current = new URL(location, current).toString() // re-validated at the top of the next iteration
+      continue
+    }
+    const contentLength = Number(res.headers.get('content-length') ?? '0')
+    if (contentLength > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${contentLength} bytes`)
+    // ponytail: cap rejects oversized bodies but only after buffering them; stream + abort past the cap if memory ever matters
+    const body = await res.text()
+    if (Buffer.byteLength(body) > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${Buffer.byteLength(body)} bytes`)
+    return { body, res }
+  }
 }
 
 function looksLikeHtml(body: string): boolean {
@@ -136,7 +152,7 @@ function looksLikeHtml(body: string): boolean {
 // falls back to real DNS — unchanged behavior for every existing production caller.
 export async function ingestRemoteUser(repo: Repository, bus: EventBus, user: User, fetchFn: typeof fetch = fetch, lookupFn?: LookupFn): Promise<{ inserted: number; discovery: FeedDiscovery }> {
   if (!user.feedUrl) return { inserted: 0, discovery: NO_DISCOVERY }
-  const { body, res } = await fetchFeedBody(user.feedUrl, fetchFn)
+  const { body, res } = await fetchFeedBody(user.feedUrl, fetchFn, lookupFn)
 
   let parsed
   try {
@@ -165,17 +181,20 @@ async function ingestViaDiscovery(repo: Repository, bus: EventBus, user: User, p
 
   // 1. Autodiscovery: a real feed link, one hop.
   if (feedUrl && feedUrl !== pageUrl) {
-    const guard = await checkCallbackUrl(feedUrl, lookupFn)
-    if (guard.ok) {
-      const { body, res } = await fetchFeedBody(feedUrl, fetchFn) // follows redirects (feeds 301/302)
-      const parsed = await parseFeedWithMeta(body) // may throw → bounded by pollAll's per-user catch
+    let fetched: { body: string; res: Response } | null = null
+    try {
+      fetched = await fetchFeedBody(feedUrl, fetchFn, lookupFn) // guards feedUrl + every redirect hop
+    } catch {
+      fetched = null // SSRF-rejected or unreachable → fall through to h-feed
+    }
+    if (fetched) {
+      const parsed = await parseFeedWithMeta(fetched.body) // parse error still propagates (bounded by pollAll) — unchanged
       const inserted = await ingestItems(repo, bus, user, parsed.items)
       // R1: persist only if no OTHER user already holds this feedUrl.
       const taken = (await repo.listRemoteUsers()).some((u) => u.id !== user.id && u.feedUrl === feedUrl)
       if (!taken) await repo.updateFeedUrl(user.id, feedUrl)
-      return { inserted, discovery: mergeDiscovery(res, parsed.discovery) }
+      return { inserted, discovery: mergeDiscovery(fetched.res, parsed.discovery) }
     }
-    // guard rejected → fall through to h-feed
   }
 
   // 2. h-feed: the page is the feed; ingest its items, leave feedUrl unchanged.

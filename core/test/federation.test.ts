@@ -5,6 +5,11 @@ import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
 import { ingestRemoteUser } from '../src/domain/ingest.ts'
 
+// The primary feedUrl fetch is now SSRF-guarded (checkCallbackUrl); default real
+// DNS won't resolve the fake a.example host used across this bridge, so inject
+// a fake public-IP lookup (mirrors push-in.test.ts / push.test.ts).
+const publicLookup = async () => [{ address: '93.184.216.34' }]
+
 test('the loop closes: instance B ingests instance A user as a remote over plain RSS', async () => {
   // Instance A: emits alice's feed
   const repoA = await createSqliteRepository(':memory:')
@@ -21,7 +26,7 @@ test('the loop closes: instance B ingests instance A user as a remote over plain
   const aliceAtB = await serviceB.addRemoteUser({ handle: 'alice-a', displayName: 'Alice (A)', feedUrl: 'http://a.example/users/alice/feed.xml' })
 
   const bridge = (async (url: string | URL | Request) => appA.request(String(url).replace('http://a.example', ''))) as unknown as typeof fetch
-  const r = await ingestRemoteUser(repoB, busB, aliceAtB, bridge)
+  const r = await ingestRemoteUser(repoB, busB, aliceAtB, bridge, publicLookup)
   expect(r.inserted).toBe(2)
 
   const timeline = await repoB.getTimeline(10)
@@ -36,5 +41,5 @@ test('the loop closes: instance B ingests instance A user as a remote over plain
   expect(bGuids).toEqual(aGuids)
 
   // idempotent re-ingest — the poller can hit A forever without duplicating
-  expect((await ingestRemoteUser(repoB, busB, aliceAtB, bridge)).inserted).toBe(0)
+  expect((await ingestRemoteUser(repoB, busB, aliceAtB, bridge, publicLookup)).inserted).toBe(0)
 })

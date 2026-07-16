@@ -154,11 +154,11 @@ test('runPollCycle slow-polls push-active feeds and discovers on polled ones', a
   const emptyRss = '<?xml version="1.0"?><rss version="2.0"><channel><title>x</title><link>https://x</link><description>d</description></channel></rss>'
   const fetchFn = vi.fn(async (url: string | URL | Request) => { fetched.push(String(url)); return new Response(emptyRss, { headers: { 'content-type': 'application/rss+xml' } }) })
   const pushIn = createPushIn({ repo, config, fetchFn: fetchFn as unknown as typeof fetch, lookupFn: publicLookup })
-  await runPollCycle({ repo, bus, config, pushIn, fetchFn: fetchFn as unknown as typeof fetch }, 1)
+  await runPollCycle({ repo, bus, config, pushIn, fetchFn: fetchFn as unknown as typeof fetch, lookupFn: publicLookup }, 1)
   expect(fetched).toContain('https://plain.example.com/feed.xml')
   expect(fetched).not.toContain('https://pushed.example.com/feed.xml') // slow-polled away on tick 1
   fetched.length = 0
-  await runPollCycle({ repo, bus, config, pushIn, fetchFn: fetchFn as unknown as typeof fetch }, 10)
+  await runPollCycle({ repo, bus, config, pushIn, fetchFn: fetchFn as unknown as typeof fetch, lookupFn: publicLookup }, 10)
   expect(fetched).toContain('https://pushed.example.com/feed.xml') // 10th tick polls everything
 })
 

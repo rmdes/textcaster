@@ -63,7 +63,7 @@ test('REAL-TIME LOOP: B receives A post via WebSub fat ping, no polling', async 
   const aliceAtB = await B.service.addRemoteUser({ handle: 'alice-a', displayName: 'Alice (A)', feedUrl: 'https://a.example/users/alice/feed.xml' })
 
   // B's first poll cycle: ingests + discovers A's hub + subscribes
-  await runPollCycle({ repo: B.repo, bus: B.bus, config: B.config, pushIn: pushInB, fetchFn: bridge }, 1)
+  await runPollCycle({ repo: B.repo, bus: B.bus, config: B.config, pushIn: pushInB, fetchFn: bridge, lookupFn: publicLookup }, 1)
   // A's hub verification is fire-and-forget; wait for B's row to flip active
   await vi.waitFor(async () => {
     const sub = await B.repo.findPushSubscription({ userId: aliceAtB.id, mode: 'websub' })
@@ -119,7 +119,7 @@ test('REAL-TIME LOOP (rssCloud): thin ping triggers immediate re-fetch', async (
 
   await A.service.createLocalPostAs('alice', 'Alice', 'cloud seed')
   const aliceAtB = await B.service.addRemoteUser({ handle: 'alice-c', displayName: 'Alice (cloud)', feedUrl: 'https://a.example/users/alice/feed.xml' })
-  await runPollCycle({ repo: B.repo, bus: B.bus, config: B.config, pushIn: pushInB, fetchFn: bridge }, 1)
+  await runPollCycle({ repo: B.repo, bus: B.bus, config: B.config, pushIn: pushInB, fetchFn: bridge, lookupFn: publicLookup }, 1)
   await vi.waitFor(async () => expect((await B.repo.findPushSubscription({ userId: aliceAtB.id, mode: 'rsscloud' }))?.state).toBe('active'))
 
   await A.service.createLocalPostAs('alice', 'Alice', 'thin-pinged across 🌩')

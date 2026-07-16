@@ -229,7 +229,7 @@ export function createPushIn(deps: PushInDeps): PushIn {
         if (!user) return 200
         // Fire-and-forget: response latency must not distinguish subscribed
         // topics from unknown ones (timing side of the no-oracle rule).
-        void ingestRemoteUser(repo, io.bus, user, fetchFn).catch((err) => {
+        void ingestRemoteUser(repo, io.bus, user, fetchFn, deps.lookupFn).catch((err) => {
           console.error(`thin ping ingest failed for ${url}:`, err instanceof Error ? err.message : err)
         })
       } catch (err) {
@@ -240,14 +240,14 @@ export function createPushIn(deps: PushInDeps): PushIn {
   }
 }
 
-export async function runPollCycle(deps: { repo: Repository; bus: EventBus; config: Config; pushIn: PushIn; fetchFn?: typeof fetch }, tick: number): Promise<void> {
+export async function runPollCycle(deps: { repo: Repository; bus: EventBus; config: Config; pushIn: PushIn; fetchFn?: typeof fetch; lookupFn?: LookupFn }, tick: number): Promise<void> {
   const { repo, bus, pushIn } = deps
   const fetchFn = deps.fetchFn ?? fetch
   for (const user of await repo.listRemoteUsers()) {
     try {
       // ponytail: in-memory tick cadence — a restart polls everything, the safe direction.
       if (tick % 10 !== 0 && (await pushIn.hasActivePush(user.id))) continue
-      const { discovery } = await ingestRemoteUser(repo, bus, user, fetchFn)
+      const { discovery } = await ingestRemoteUser(repo, bus, user, fetchFn, deps.lookupFn)
       await pushIn.maybeSubscribe(user, discovery)
     } catch (err) {
       console.error(`ingest failed for ${user.handle}:`, err instanceof Error ? err.message : err)
