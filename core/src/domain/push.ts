@@ -4,7 +4,7 @@ import type { Config } from '../config.ts'
 import type { TimelineEntry } from './types.ts'
 import { checkCallbackUrl } from './push-guard.ts'
 import type { LookupFn } from './push-guard.ts'
-import { feedUrls, renderRssFeed, renderJsonFeed, hubLinkUrl } from './feed.ts'
+import { feedUrls, renderRssFeed, renderJsonFeed, hubLinkUrl, injectSourceComments } from './feed.ts'
 import type { User } from './types.ts'
 
 const PUSH_TIMEOUT_MS = 10_000
@@ -218,7 +218,14 @@ export function createPush(deps: PushDeps): Push {
             const subs = (await repo.listActiveSubscriptions(topic, now)).filter((s) => s.protocol === 'websub')
             if (subs.length === 0) continue
             // Body regenerated ONCE per topic per event; same body (and HMAC input) for every subscriber.
-            const body = format === 'xml' ? renderRssFeed(entry.author, posts, ctx) : renderJsonFeed(entry.author, posts, ctx)
+            let body = format === 'xml' ? renderRssFeed(entry.author, posts, ctx) : renderJsonFeed(entry.author, posts, ctx)
+            if (format === 'xml') {
+              // Mirrors GET /users/:handle/feed.xml: advertise source:comments before
+              // signing, so a subscriber's fat-ping body matches what a pull would fetch.
+              const counts = await repo.countRepliesByPostIds(posts.map((p) => p.id))
+              body = injectSourceComments(body, posts.filter((p) => (counts.get(p.id) ?? 0) > 0)
+                .map((p) => ({ guid: p.guid, count: counts.get(p.id)!, feedUrl: `${ctx.publicUrl}/post/${p.id}/comments.xml` })))
+            }
             const contentType = format === 'xml' ? 'application/rss+xml; charset=utf-8' : 'application/feed+json; charset=utf-8'
             for (const sub of subs) {
               const headers: Record<string, string> = {

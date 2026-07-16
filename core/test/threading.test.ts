@@ -39,6 +39,7 @@ test('RSS out: reply items dual-emit; bare-guid ref carries isPermaLink=false; n
   expect(xml).toContain('<source:inReplyTo>https://a.ex/1</source:inReplyTo>')
   expect(xml).toContain('<thr:in-reply-to ref="https://a.ex/1" href="https://a.ex/1"/>')
   expect(xml).toContain('<source:inReplyTo isPermaLink="false">bare-guid-ref</source:inReplyTo>')
+  expect(xml).toContain('<thr:in-reply-to ref="bare-guid-ref"/>') // ref only — no href for a non-URL ref
   expect(xml.match(/source:inReplyTo/g)!.length).toBe(4) // 2 open + 2 close tags — p3 emits none
 })
 

@@ -49,6 +49,10 @@ function orderThread(entries: TimelineEntry[], rootId: string): TimelineEntry[] 
   const byId = new Map(entries.map((e) => [e.id, e]))
   const childrenOf = new Map<string, TimelineEntry[]>()
   for (const e of entries) {
+    // cycle-breaker: the root is never a child, so any adoption-formed
+    // mutual-reply cycle breaks here — do not remove.
+    // ponytail: walk recursion depth = conversation depth (Node stack
+    // ~10k); iterative stack if a pathological chain ever matters.
     if (e.id === rootId) continue
     const parentId = e.inReplyToPostId && byId.has(e.inReplyToPostId) ? e.inReplyToPostId : rootId
     const siblings = childrenOf.get(parentId)
@@ -226,6 +230,9 @@ export class SqliteRepository implements Repository {
         .where('id', '!=', parent.id)
         .execute()
       if (orphans.length === 0) continue
+      // ponytail: not transactional — a crash mid-loop can leave a partially
+      // re-rooted subtree until the thread is next touched; wrap in a
+      // transaction if that residual ever bites.
       await this.db.updateTable('posts')
         .set({ in_reply_to_post_id: parent.id, thread_root_id: newRoot })
         .where('id', 'in', orphans.map((o) => o.id))

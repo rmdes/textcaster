@@ -100,18 +100,19 @@ export function injectSourceComments(xml: string, ads: Array<{ guid: string; cou
     out = out.slice(0, close) + `<source:comments count="${ad.count}" feedUrl="${xmlAttrEscape(ad.feedUrl)}"/>` + out.slice(close)
     injected = true
   }
-  if (injected && !out.includes('xmlns:source=')) {
+  if (injected && !out.slice(0, out.indexOf('>') + 1).includes('xmlns:source=')) {
     out = out.replace('<rss ', '<rss xmlns:source="http://source.scripting.com/" ')
   }
   return out
 }
 
 export function renderCommentsFeed(post: Post, replies: Post[], ctx: FeedContext): string {
-  const label = post.title ?? (post.content.length > 60 ? `${post.content.slice(0, 60)}…` : post.content)
+  const chars = Array.from(post.content) // code-point safe: .length/.slice on a string split surrogate pairs
+  const label = post.title ?? (chars.length > 60 ? `${chars.slice(0, 60).join('')}…` : post.content)
   return generateRssFeed(
     {
       title: `Comments on "${label}"`,
-      link: post.url ?? ctx.publicUrl ?? '',
+      link: post.url ?? ctx.publicUrl ?? 'https://textcaster.invalid',
       description: `Replies to "${label}"`,
       items: replies.map((p) => ({
         ...(p.title !== null ? { title: p.title } : {}),

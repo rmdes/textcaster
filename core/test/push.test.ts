@@ -155,6 +155,19 @@ test('self mode delivers the fat ping with HMAC signature; expired subs skipped;
   expect(flaky.mock.calls.length).toBe(2) // 1 attempt + 1 retry for the one live xml-topic subscriber
 })
 
+test('self mode fat ping advertises source:comments for a post with a reply', async () => {
+  const { repo, service, config } = await setup(SELF_ENV)
+  const root = await service.createLocalPostAs('alice', 'Alice', 'root post')
+  const topic = 'https://cast.example.com/users/alice/feed.xml'
+  await repo.upsertSubscription({ id: 's1', protocol: 'websub', topic, callback: 'https://cb.example.com/receive', callbackHost: 'cb.example.com', secret: null, expiresAt: '2027-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+  await service.createLocalPostAs('bob', 'Bob', 'a reply', root)
+  const bodies: string[] = []
+  const fetchFn = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => { bodies.push(String(init?.body)); return new Response('', { status: 200 }) })
+  const push = createPush({ repo, config, fetchFn: fetchFn as unknown as typeof fetch })
+  await push.onLocalPost(root)
+  expect(bodies[0]).toContain(`<source:comments count="1" feedUrl="https://cast.example.com/post/${root.id}/comments.xml"/>`)
+})
+
 test('renewing an existing subscription is not blocked by the per-host cap', async () => {
   const { repo, service, config } = await setup(SELF_ENV)
   await service.createLocalPostAs('alice', 'Alice', 'seed')

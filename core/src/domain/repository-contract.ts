@@ -353,6 +353,24 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       expect((await repo.getThread('root')).map((e) => e.id)).toEqual(['root', 'r1', 'r2'])
     })
 
+    test('getThread never shows a reply before its parent, even when feed-truncated timestamps invert them', async () => {
+      const repo = await makeRepo()
+      const a = await repo.createLocalUser({ handle: 'a', displayName: 'A' })
+      await repo.insertPost(mkPost({ id: 'root', authorId: a.id, publishedAt: '2026-01-01T00:00:00.500Z' }))
+      // RFC-822 pubDate truncates sub-second precision: the reply's timestamp sorts EARLIER than its parent
+      await repo.insertPost(mkPost({ id: 're', authorId: a.id, publishedAt: '2026-01-01T00:00:00.000Z', inReplyTo: 'root', inReplyToPostId: 'root', threadRootId: 'root' }))
+      expect((await repo.getThread('root')).map((e) => e.id)).toEqual(['root', 're'])
+    })
+
+    test('getThread terminates on a mutual-reply cycle (adoption-formed) and returns each post exactly once', async () => {
+      const repo = await makeRepo()
+      const a = await repo.createLocalUser({ handle: 'a', displayName: 'A' })
+      await repo.insertPost(mkPost({ id: 'x', authorId: a.id, inReplyToPostId: 'y', threadRootId: 'x' }))
+      await repo.insertPost(mkPost({ id: 'y', authorId: a.id, inReplyToPostId: 'x', threadRootId: 'x' }))
+      const thread = await repo.getThread('x')
+      expect(thread.map((e) => e.id)).toEqual(['x', 'y'])
+    })
+
     test('adoptOrphans attaches earlier orphans and re-roots their whole subtree', async () => {
       const repo = await makeRepo()
       const a = await repo.createRemoteUser({ handle: 'a', displayName: 'A', feedUrl: 'https://a.ex/f' })

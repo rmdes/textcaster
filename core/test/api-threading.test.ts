@@ -3,12 +3,13 @@ import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
+import type { FeedContext } from '../src/domain/feed.ts'
 
-async function makeApp() {
+async function makeApp(feeds?: FeedContext) {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret' })
+  const app = createApp({ service, bus, token: 'secret', feeds })
   return { app, repo, service }
 }
 const auth = { authorization: 'Bearer secret', 'content-type': 'application/json' }
@@ -47,18 +48,12 @@ test('reply-to-reply threads to the TOP root', async () => {
 })
 
 test('comments.xml serves direct replies; feed.xml advertises source:comments', async () => {
-  const { app } = await makeApp()
-  // makeApp has no publicUrl — rebuild with one for this test
-  const repo2 = await createSqliteRepository(':memory:')
-  const bus2 = createEventBus()
-  const service2 = createService(repo2, bus2)
-  const app2 = createApp({ service: service2, bus: bus2, token: 'secret', feeds: { publicUrl: 'https://cast.example', hubUrl: null, rssCloud: false } })
-  const root = await (await app2.request('/posts', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'alice', content: 'root' }) })).json()
-  await app2.request('/posts', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'bob', content: 'the reply', inReplyTo: root.post.id }) })
-  const comments = await (await app2.request(`/post/${root.post.id}/comments.xml`)).text()
+  const { app } = await makeApp({ publicUrl: 'https://cast.example', hubUrl: null, rssCloud: false })
+  const root = await (await app.request('/posts', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'alice', content: 'root' }) })).json()
+  await app.request('/posts', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'bob', content: 'the reply', inReplyTo: root.post.id }) })
+  const comments = await (await app.request(`/post/${root.post.id}/comments.xml`)).text()
   expect(comments).toContain('the reply')
-  const feed = await (await app2.request('/users/alice/feed.xml')).text()
+  const feed = await (await app.request('/users/alice/feed.xml')).text()
   expect(feed).toContain(`<source:comments count="1" feedUrl="https://cast.example/post/${root.post.id}/comments.xml"/>`)
-  expect((await app2.request('/post/ghost/comments.xml')).status).toBe(404)
-  void app // silence unused
+  expect((await app.request('/post/ghost/comments.xml')).status).toBe(404)
 })
