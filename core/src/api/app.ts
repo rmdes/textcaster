@@ -6,7 +6,7 @@ import { bearerAuth } from './auth.ts'
 import { parseCursor, formatCursor } from './cursor.ts'
 import { DomainError } from '../domain/types.ts'
 import { renderRssFeed, renderJsonFeed } from '../domain/feed.ts'
-import { buildFollowingOpml } from '../domain/opml.ts'
+import { buildFollowingOpml, importFollowingOpml } from '../domain/opml.ts'
 import type { FeedContext } from '../domain/feed.ts'
 import type { Service } from '../domain/service.ts'
 import type { EventBus } from '../domain/bus.ts'
@@ -122,6 +122,25 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     const following = await service.listFollowing(user.id)
     const opml = buildFollowingOpml(user.displayName, following, feeds.publicUrl)
     return c.body(opml, 200, { 'content-type': 'text/xml; charset=utf-8' })
+  })
+
+  app.post('/users/:handle/follows/opml', bearerAuth(token), bodyLimit({ maxSize: 1024 * 1024, onError: rejectOversized }), async (c) => {
+    const follower = await resolveUser(c.req.param('handle') ?? '')
+    if (!follower) return c.json({ error: 'unknown user' }, 404)
+    if (follower.kind !== 'local') return c.json({ error: 'follower must be a local user' }, 400)
+    const body = await c.req.text()
+    const result = await importFollowingOpml(
+      {
+        listRemoteUsers: () => service.listRemoteUsers(),
+        getUserByHandle: (h) => service.getUserByHandle(h),
+        addRemoteUser: (i) => service.addRemoteUser(i),
+        addFollow: (f, t) => service.addFollow(f, t),
+        publicUrl: feeds.publicUrl,
+      },
+      follower,
+      body,
+    )
+    return c.json(result, 200)
   })
 
   const FEED_LIMIT = 50

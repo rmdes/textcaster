@@ -69,6 +69,9 @@ export function createService(repo: Repository, bus: EventBus) {
     listFollowing(userId: string) {
       return repo.listFollowing(userId)
     },
+    listRemoteUsers() {
+      return repo.listRemoteUsers()
+    },
   }
 }
 
