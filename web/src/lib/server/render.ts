@@ -5,6 +5,7 @@ const SANITIZE_CONFIG: sanitizeHtml.IOptions = {
 	allowedTags: ['p', 'br', 'a', 'em', 'strong', 'b', 'i', 'blockquote', 'code', 'pre', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'img'],
 	allowedAttributes: { a: ['href', 'rel'], img: ['src', 'loading'] },
 	allowedSchemes: ['http', 'https'],
+	allowProtocolRelative: false,
 	transformTags: {
 		a: sanitizeHtml.simpleTransform('a', { rel: 'noreferrer' }),
 		img: sanitizeHtml.simpleTransform('img', { loading: 'lazy' })

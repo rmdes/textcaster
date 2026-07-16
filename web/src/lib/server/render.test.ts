@@ -19,6 +19,7 @@ test('hostile fixtures never survive', () => {
 	// THE load-bearing one: markdown that embeds raw HTML — marked passes it through
 	expect(renderPostHtml(remote('x', 'safe **md**\n\n<script>alert(1)</script>'))).not.toContain('script')
 	expect(renderPostHtml(remote('<p class="x" style="y">attrs stripped</p>'))).not.toContain('class=')
+	expect(renderPostHtml(remote('<a href="//evil.com">x</a>'))).not.toContain('href=')
 })
 
 test('transform-added attributes survive in the OUTPUT (allowedAttributes gotcha)', () => {

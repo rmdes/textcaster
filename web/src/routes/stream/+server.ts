@@ -37,6 +37,7 @@ export const GET: RequestHandler = async ({ request }) => {
 				if (!line.startsWith('data: ')) return line
 				try {
 					const entry = JSON.parse(line.slice(6))
+					if (typeof entry !== 'object' || entry === null) return line
 					return `data: ${JSON.stringify({ ...entry, contentHtml: renderPostHtml(entry) })}`
 				} catch {
 					return line

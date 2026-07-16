@@ -88,7 +88,7 @@ export async function parseFeedWithMeta(body: string): Promise<{ items: ParsedIt
   const parsed = parseFeedDocument(cleanBody)
   if (parsed.format === 'json') {
     const items = (parsed.feed.items ?? []).map((it) =>
-      toParsedItem(it.id, it.title ?? null, it.content_text ?? it.content_html ?? '', it.url ?? null, it.date_published ?? '', now))
+      toParsedItem(it.id, it.title ?? null, it.content_html ?? it.content_text ?? '', it.url ?? null, it.date_published ?? '', now))
     const hubs = (parsed.feed.hubs ?? []).map((h) => h.url).filter((u): u is string => typeof u === 'string')
     return { items, discovery: { hubs, self: parsed.feed.feed_url ?? null, cloud: null } }
   }

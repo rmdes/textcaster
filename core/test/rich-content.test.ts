@@ -43,3 +43,34 @@ test('JSON Feed: local posts carry content_html (rendered) + content_text (raw m
   expect(json.items[0].content_html).toContain('<strong>hello</strong>')
   expect(json.items[0].content_text).toBe('**hello**')
 })
+
+test('JSON Feed ingest prefers content_html over content_text (our own feeds emit rendered HTML + raw markdown)', async () => {
+  const json = JSON.stringify({
+    version: 'https://jsonfeed.org/version/1.1',
+    title: 't',
+    items: [{ id: 'g1', content_html: '<p><strong>hi</strong></p>', content_text: '**hi**' }],
+  })
+  const { items } = await parseFeedWithMeta(json)
+  expect(items[0].content).toBe('<p><strong>hi</strong></p>')
+})
+
+test('reply+markdown co-occurrence: a LOCAL reply carries inReplyTo AND source:markdown in the same item', () => {
+  const reply = { ...basePost, content: '**re** body', inReplyTo: 'https://a.ex/1' }
+  const xml = renderRssFeed(alice, [reply], ctx)
+  expect(xml).toContain('<source:inReplyTo')
+  expect(xml).toContain('<thr:in-reply-to')
+  expect(xml).toContain('<source:markdown>**re** body</source:markdown>')
+})
+
+// Drift canary: same hostile fixtures as web's render.test.ts hostile block,
+// run against core's renderLocalHtml. Two sanitizer configs, one behavioral
+// contract — this catches the allowlist drifting apart between them.
+test('renderLocalHtml hostile fixtures never survive (drift canary vs web/src/lib/server/render.ts)', () => {
+  expect(renderLocalHtml('<script>alert(1)</script>ok')).not.toContain('script')
+  expect(renderLocalHtml('<img src="x" onerror="p()">')).not.toContain('onerror')
+  expect(renderLocalHtml('<a href="javascript:alert(1)">x</a>')).not.toContain('javascript:')
+  expect(renderLocalHtml('<img src="data:image/png;base64,xx">')).not.toContain('data:')
+  expect(renderLocalHtml('<svg onload="p()"></svg>')).not.toContain('svg')
+  expect(renderLocalHtml('<p class="x" style="y">attrs stripped</p>')).not.toContain('class=')
+  expect(renderLocalHtml('<a href="//evil.com">x</a>')).not.toContain('href=')
+})

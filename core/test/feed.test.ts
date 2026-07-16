@@ -55,7 +55,7 @@ test('JSON Feed round-trips and carries version + hub', async () => {
   const raw = await res.text()
   expect(raw).toContain('"version": "https://jsonfeed.org/version/1.1"')
   const items = (await parseFeedWithMeta(raw)).items
-  expect(items.map((i) => i.content)).toContain('second body')
+  expect(items.map((i) => i.content)).toContain('<p>second body</p>') // content_html preferred (our own JSON feeds emit rendered HTML)
 })
 
 test('links are omitted without config: no self/hub/cloud when unset', async () => {

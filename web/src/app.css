@@ -515,6 +515,7 @@ button:hover {
 .post .body {
 	max-height: 14rem;
 	overflow: hidden;
+	cursor: default;
 }
 
 .post .body.expanded {
@@ -549,10 +550,6 @@ button:hover {
 /* Rich post bodies (rss.chat 7/6-7/7 lessons: quotes read as quotes,
    headings have hierarchy, code reads as code). Scoped inside .body so
    page chrome is untouched. div.body replaces the old p.body — same clamp. */
-
-.post .body {
-	cursor: default;
-}
 
 .post .body blockquote {
 	margin: var(--space-sm) 0;

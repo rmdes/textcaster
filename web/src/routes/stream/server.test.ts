@@ -140,3 +140,16 @@ test('an unparseable frame forwards untouched', async () => {
 	const res = await GET({ request: new Request('http://x/stream') } as never)
 	expect(await res.text()).toContain('data: not-json\n')
 })
+
+test('a parseable-but-non-object data payload forwards byte-identical', async () => {
+	const frame = 'event: post\nid: p-3\ndata: 123\n\n'
+	const body = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode(frame))
+			controller.close()
+		}
+	})
+	global.fetch = vi.fn(async () => new Response(body, { status: 200 })) as unknown as typeof fetch
+	const res = await GET({ request: new Request('http://x/stream') } as never)
+	expect(await res.text()).toContain('data: 123\n')
+})
