@@ -11,6 +11,18 @@ function fakeFetch(body: string, contentType: string) {
   return async () => new Response(body, { headers: { 'content-type': contentType } })
 }
 
+test('sends a descriptive User-Agent so bot-protected feeds are not blocked', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const user = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
+  const spy = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(RSS, { headers: { 'content-type': 'application/rss+xml' } }))
+  await ingestRemoteUser(repo, bus, user, spy as unknown as typeof fetch)
+  const init = spy.mock.calls[0][1]
+  const headers = new Headers(init?.headers)
+  expect(headers.get('user-agent')).toMatch(/Textcaster/)
+  expect(headers.get('accept')).toMatch(/rss|atom|xml|json/i)
+})
+
 test('ingests RSS items as remote posts, once (idempotent), and emits new ones', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()

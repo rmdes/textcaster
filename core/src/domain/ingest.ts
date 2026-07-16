@@ -25,6 +25,14 @@ function fallbackGuid(title: string | null, content: string, rawDate: string): s
 export const FETCH_TIMEOUT_MS = 10_000
 const MAX_FEED_BYTES = 5 * 1024 * 1024
 
+// Many feeds sit behind Cloudflare/WAFs that serve an HTML challenge to requests
+// with no (or a bare `node`) User-Agent — which then fails parsing as "Unrecognized
+// feed format". A descriptive UA + a feed Accept header gets the real feed back.
+const FEED_FETCH_HEADERS = {
+  'user-agent': 'Textcaster/0.1 (+https://github.com/rmdes/textcaster)',
+  accept: 'application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5',
+}
+
 // A garbage or unparseable raw date must not throw and kill the whole feed —
 // it degrades to "now", same as a missing date. Callers still hash the raw
 // string (not this return value) for the fallback guid, so determinism is unaffected.
@@ -109,7 +117,7 @@ export async function ingestItems(repo: Repository, bus: EventBus, user: User, i
 
 export async function ingestRemoteUser(repo: Repository, bus: EventBus, user: User, fetchFn: typeof fetch = fetch): Promise<{ inserted: number; discovery: FeedDiscovery }> {
   if (!user.feedUrl) return { inserted: 0, discovery: NO_DISCOVERY }
-  const res = await fetchFn(user.feedUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+  const res = await fetchFn(user.feedUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: FEED_FETCH_HEADERS })
   const contentLength = Number(res.headers.get('content-length') ?? '0')
   if (contentLength > MAX_FEED_BYTES) throw new Error(`feed exceeds size cap: ${contentLength} bytes`)
   // ponytail: cap rejects oversized bodies but only after buffering them; stream + abort past the cap if memory ever matters
