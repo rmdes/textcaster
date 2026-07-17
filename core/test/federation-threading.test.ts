@@ -24,8 +24,8 @@ async function instance(publicUrl: string) {
   return { repo, bus, service, app, serve }
 }
 
-async function registeredAs(app: Awaited<ReturnType<typeof instance>>['app'], email: string, handle: string, displayName: string): Promise<string> {
-  const cookie = await registeredSession(app, email)
+async function registeredAs(app: Awaited<ReturnType<typeof instance>>['app'], email: string, handle: string, displayName: string, repo: Awaited<ReturnType<typeof instance>>['repo']): Promise<string> {
+  const cookie = await registeredSession(app, email, repo)
   await app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ handle, displayName }) })
   return cookie
 }
@@ -35,7 +35,7 @@ test('MONEY TEST: a conversation federates over plain RSS, round trip, threadwal
   const B = await instance('https://b.example')
 
   // A: alice posts
-  const aliceCookie = await registeredAs(A.app, 'alice@test.example', 'alice', 'Alice')
+  const aliceCookie = await registeredAs(A.app, 'alice@test.example', 'alice', 'Alice', A.repo)
   const orig = await (await A.app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ content: 'hello from A' }) })).json()
 
   // B follows alice's feed and ingests the post
@@ -45,7 +45,7 @@ test('MONEY TEST: a conversation federates over plain RSS, round trip, threadwal
   const ingested = (await B.repo.getTimeline(10)).find((e) => e.content === '<p>hello from A</p>')!
 
   // B: bob replies via the reply button (target = the ingested copy)
-  const bobCookie = await registeredAs(B.app, 'bob@test.example', 'bob', 'Bob')
+  const bobCookie = await registeredAs(B.app, 'bob@test.example', 'bob', 'Bob', B.repo)
   await B.app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie: bobCookie }, body: JSON.stringify({ content: 'reply from B', inReplyTo: ingested.id }) })
 
   // B's feed carries both reply forms

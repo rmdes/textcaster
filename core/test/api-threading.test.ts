@@ -66,8 +66,8 @@ test('reply-to-reply threads to the TOP root', async () => {
 })
 
 test('comments.xml serves direct replies; feed.xml advertises source:comments', async () => {
-  const { app } = await makeApp({ publicUrl: 'https://cast.example', hubUrl: null, rssCloud: false })
-  const aliceCookie = await registeredSession(app, 'alice@test.example')
+  const { app, repo } = await makeApp({ publicUrl: 'https://cast.example', hubUrl: null, rssCloud: false })
+  const aliceCookie = await registeredSession(app, 'alice@test.example', repo)
   await app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice' }) })
   const bobCookie = await anonSession(app)
   const root = await (await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ content: 'root' }) })).json()

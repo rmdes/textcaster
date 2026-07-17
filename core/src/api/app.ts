@@ -53,9 +53,10 @@ const MAX_FAT_PING_BYTES = 5 * 1024 * 1024
 const MAX_FORM_BYTES = 64 * 1024
 const rejectOversized = (c: Context) => c.text('payload too large', 413)
 
-export function createApp(deps: { service: Service; bus: EventBus; token: string; auth: Auth; users: UserDirectory; feeds?: FeedContext; pushApi?: PushApi; pushInApi?: PushInApi }): Hono {
+export function createApp(deps: { service: Service; bus: EventBus; token: string; auth: Auth; users: UserDirectory; feeds?: FeedContext; pushApi?: PushApi; pushInApi?: PushInApi; mailEnabled?: boolean }): Hono {
   const { service, bus, token } = deps
   const feeds: FeedContext = deps.feeds ?? { publicUrl: null, hubUrl: null, rssCloud: false }
+  const mailEnabled = deps.mailEnabled ?? true
   const app = new Hono()
 
   app.onError((err, c) => {
@@ -65,6 +66,15 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
   })
 
   app.get('/health', (c) => c.json({ ok: true }))
+
+  // F-2: without a configured mailer, refuse the routes that would create an
+  // unverifiable account (or send mail we cannot send) — up front, so no
+  // limbo row is ever written. GET flows (verify/reset links) are unaffected.
+  const MAIL_GATED = new Set(['/api/auth/sign-up/email', '/api/auth/sign-in/magic-link', '/api/auth/request-password-reset'])
+  app.on('POST', [...MAIL_GATED], (c) => {
+    if (mailEnabled) return deps.auth.handler(c.req.raw)
+    return c.json({ error: 'email accounts are not available on this instance' }, 503)
+  })
 
   app.on(['GET', 'POST'], '/api/auth/*', (c) => deps.auth.handler(c.req.raw))
 

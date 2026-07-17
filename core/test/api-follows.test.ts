@@ -25,7 +25,7 @@ test('POST /me/follows requires a session', async () => {
 
 test('follow, list, and unfollow round-trip', async () => {
   const { app, repo } = await makeApp()
-  const cookie = await registeredSession(app, 'alice@test.example')
+  const cookie = await registeredSession(app, 'alice@test.example', repo)
   await renameTo(app, cookie, 'alice', 'Alice')
   await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
   const f = await app.request('/me/follows', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ handle: 'news' }) })
@@ -47,11 +47,11 @@ test('follow errors: 404 unknown handle; anonymous session CAN follow', async ()
 })
 
 test('POST /me/follows/opml requires registration: 403 anonymous, 200 registered', async () => {
-  const { app } = await makeApp()
+  const { app, repo } = await makeApp()
   const opml = '<?xml version="1.0" encoding="UTF-8"?><opml version="2.0"><head><title>t</title></head><body><outline type="rss" text="News" xmlUrl="https://ex.com/f.xml"/></body></opml>'
   const anonCookie = await anonSession(app)
   expect((await app.request('/me/follows/opml', { method: 'POST', headers: { cookie: anonCookie }, body: opml })).status).toBe(403)
-  const regCookie = await registeredSession(app, 'importer@test.example')
+  const regCookie = await registeredSession(app, 'importer@test.example', repo)
   const reg = await app.request('/me/follows/opml', { method: 'POST', headers: { cookie: regCookie }, body: opml })
   expect(reg.status).toBe(200)
   expect(await reg.json()).toEqual({ followed: 1, created: 1, skipped: 0 })

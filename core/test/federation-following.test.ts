@@ -14,7 +14,7 @@ async function instance(publicUrl: string | null) {
 
 test('OPML round-trip: instance 1 export → instance 2 import recreates remote follows', async () => {
   const one = await instance('https://one.example')
-  const aliceCookie = await registeredSession(one.app, 'alice@test.example')
+  const aliceCookie = await registeredSession(one.app, 'alice@test.example', one.repo)
   await one.app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice' }) })
   await one.service.addRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
   await one.service.addRemoteUser({ handle: 'blog', displayName: 'Blog', feedUrl: 'https://ex.com/b.xml' })
@@ -24,7 +24,7 @@ test('OPML round-trip: instance 1 export → instance 2 import recreates remote 
   const opml = await (await one.app.request('/users/alice/following.opml')).text()
 
   const two = await instance('https://two.example')
-  const importerCookie = await registeredSession(two.app, 'importer@test.example')
+  const importerCookie = await registeredSession(two.app, 'importer@test.example', two.repo)
   await two.app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: importerCookie }, body: JSON.stringify({ handle: 'importer', displayName: 'Importer' }) })
   const res = await two.app.request('/me/follows/opml', { method: 'POST', headers: { cookie: importerCookie }, body: opml })
   expect(res.status).toBe(200)

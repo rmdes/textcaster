@@ -1,7 +1,8 @@
 import { betterAuth } from 'better-auth'
-import { anonymous } from 'better-auth/plugins'
+import { anonymous, magicLink } from 'better-auth/plugins'
 import type Database from 'better-sqlite3'
 import type { User } from './domain/types.ts'
+import type { Mailer } from './mail.ts'
 
 export interface AuthDeps {
   sqlite: Database.Database // THE shared handle from repo.raw — never a second connection
@@ -12,6 +13,7 @@ export interface AuthDeps {
   secret: string
   webOrigin: string
   anonTtlDays: number
+  mailer: Mailer | null
 }
 
 export function createAuth(deps: AuthDeps) {
@@ -24,18 +26,38 @@ export function createAuth(deps: AuthDeps) {
     // derive from this URL. Redirect flows are unused (JSON responses only).
     baseURL: deps.webOrigin,
     trustedOrigins: [deps.webOrigin],
-    emailAndPassword: { enabled: true },
+    emailAndPassword: {
+      enabled: true,
+      requireEmailVerification: true, // hard verification (spec decision)
+      sendResetPassword: async ({ user, url }) => {
+        if (!deps.mailer) throw new Error('email is not configured on this instance')
+        await deps.mailer.send(user.email, 'Reset your Textcaster password', `Reset your password: ${url}`)
+      },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        if (!deps.mailer) throw new Error('email is not configured on this instance')
+        await deps.mailer.send(user.email, 'Verify your Textcaster email', `Verify your email: ${url}`)
+      },
+    },
     // 4x the sweep TTL: the browser cookie must outlive the idle window even
     // though getSession's rolling refresh isn't relayed yet — relaying it via
     // /me is the real fix (recorded follow-up)
     session: { expiresIn: deps.anonTtlDays * 4 * 86400 },
     // ponytail: per-IP throttle only; CAPTCHA/turnstile if a real flood ever happens
-    rateLimit: { enabled: true, customRules: { '/sign-in/anonymous': { window: 60, max: 10 } } },
+    rateLimit: { enabled: true, customRules: { '/sign-in/anonymous': { window: 60, max: 10 }, '/sign-in/magic-link': { window: 60, max: 5 } } },
     // disableOriginCheck defaults to true under NODE_ENV=test (better-auth's
     // isTest() shortcut) — pin it off so CSRF/origin checks are real in our
     // own (vitest) test suite too, not just in production.
     advanced: { cookiePrefix: 'textcaster', disableOriginCheck: false },
     plugins: [
+      magicLink({
+        sendMagicLink: async ({ email, url }) => {
+          if (!deps.mailer) throw new Error('email is not configured on this instance')
+          await deps.mailer.send(email, 'Your Textcaster login link', `Log in: ${url}`)
+        },
+      }),
       anonymous({
         // Fires on ANY sign-in/sign-up while an anonymous session exists
         // (probed) — registration upgrade AND plain login both land here.
