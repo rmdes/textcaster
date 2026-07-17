@@ -131,10 +131,15 @@
 		<details class="panel" open>
 			<summary>About</summary>
 			<p>
-				One timeline where people who post here and people who post on their own site are equal
-				citizens. Local posts appear live; remote feeds are polled in.
+				Textcaster is a feeds-native social timeline: people who post here and people who post on
+				their own site are equal citizens. Everything travels as RSS — posts, replies, whole
+				conversations — so following, threading, and federation work with nothing but open feeds.
 			</p>
-			<p><a href="https://textcasting.org" rel="noreferrer">Textcasting</a></p>
+			<p>
+				Built on <a href="https://textcasting.org" rel="noreferrer">Textcasting</a>, inspired by Dave
+				Winer's <a href="https://github.com/scripting/rss.chat" rel="noreferrer">rss.chat</a>.
+			</p>
+			<p><a href="https://github.com/rmdes/textcaster" rel="noreferrer">Source &amp; docs</a></p>
 		</details>
 
 		<details class="panel" open>
