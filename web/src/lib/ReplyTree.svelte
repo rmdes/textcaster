@@ -46,7 +46,7 @@
 					}}><span class="glyph" aria-hidden="true">▸</span>{isOpen(reply.id) ? 'Hide replies' : `${n} ${n === 1 ? 'reply' : 'replies'}`}</a>
 			{/if}
 			<a class="source" href="/post/{reply.id}">Reply</a>
-			{#if reply.url}<a class="source" href={reply.url} rel="noreferrer">source</a>{/if}
+			{#if reply.source === 'remote' && reply.url}<a class="source" href={reply.url} rel="noreferrer">source</a>{/if}
 			{#if isOpen(reply.id)}
 				<ReplyTree {thread} parentId={reply.id} {openAll} {highlightId} />
 			{/if}

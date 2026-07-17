@@ -3,12 +3,11 @@ import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
-import { parseFeedWithMeta } from '../src/domain/ingest.ts'
+import { parseFeedWithMeta, ingestItems } from '../src/domain/ingest.ts'
 import type { FeedContext } from '../src/domain/feed.ts'
 import type { Post } from '../src/domain/types.ts'
 import { renderFirehoseRss, injectSourceAccounts, injectSourceComments } from '../src/domain/feed.ts'
 import { generateRssFeed } from 'feedsmith'
-import { ingestItems } from '../src/domain/ingest.ts'
 import { makeAuth } from './auth-helper.ts'
 
 const CTX: FeedContext = { publicUrl: 'https://cast.example.com', hubUrl: 'https://cast.example.com/hub', rssCloud: true }
@@ -138,9 +137,7 @@ test('injectSourceAccounts: element lands inside the right item; xmlns declared 
 })
 
 test('xmlns dedup checks the opening tag, not the whole document (body text may mention xmlns:source=)', () => {
-  // Use renderRssFeed (not firehose) with a remote post to avoid feedsmith auto-declaring xmlns
-  const ctx = { publicUrl: 'https://tc.example', hubUrl: null, rssCloud: false }
-  const remote = { id: 'u1', kind: 'remote' as const, handle: 'remote', displayName: 'Remote', feedUrl: 'https://example.com/feed.xml', createdAt: '2026-01-01T00:00:00.000Z', authUserId: null }
+  // Use generateRssFeed with a remote post to avoid feedsmith auto-declaring xmlns
   const post: Post = {
     id: 'p1', guid: 'guid-1', title: null,
     content: 'Check out xmlns:source= in the docs', contentMarkdown: null,
@@ -165,7 +162,7 @@ test('xmlns dedup checks the opening tag, not the whole document (body text may 
   )
   // Verify body text contains the substring but opening tag doesn't have xmlns yet
   expect(xml).toContain('xmlns:source=') // body text mention
-  expect(xml.slice(xml.indexOf('<rss'), xml.indexOf('>') + 1)).not.toContain('xmlns:source="http://source') // opening tag
+  expect(xml.slice(xml.indexOf('<rss'), xml.indexOf('>', xml.indexOf('<rss')) + 1)).not.toContain('xmlns:source="http://source') // opening tag
   // Inject source comments; the check must scope to opening tag only, not whole doc
   xml = injectSourceComments(xml, [{ guid: 'guid-1', count: 3, feedUrl: 'https://tc.example/post/guid-1/comments.xml' }])
   // After injection, opening <rss> tag MUST have the xmlns declaration

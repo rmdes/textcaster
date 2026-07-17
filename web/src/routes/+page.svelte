@@ -103,7 +103,7 @@
 					{#if post.inReplyTo && !post.inReplyToPostId && post.inReplyTo.startsWith('http')}
 						<a class="source" href={post.inReplyTo} rel="noreferrer">in reply to ↗</a>
 					{/if}
-					{#if post.url}<a class="source" href={post.url} rel="noreferrer">{URL.parse(post.url)?.hostname ?? 'source'}</a>{/if}
+					{#if post.source === 'remote' && post.url}<a class="source" href={post.url} rel="noreferrer">{URL.parse(post.url)?.hostname ?? 'source'}</a>{/if}
 					{#if expanded[post.id]}
 						<ReplyTree thread={expanded[post.id]} parentId={post.id} />
 					{/if}
