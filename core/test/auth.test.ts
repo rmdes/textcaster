@@ -249,6 +249,16 @@ test('hard verification: login blocked until the emailed link is visited', async
   expect(after.status).toBe(200)
 })
 
+test('rate limiting resolves the real client IP from x-forwarded-for (not one shared bucket)', async () => {
+  const { app, repo } = await makeApp()
+  const ip = uniqueIp()
+  // anon sign-in DOES create a session (email sign-up under hard verification
+  // doesn't) — its session row records the IP better-auth resolved.
+  await app.request('/api/auth/sign-in/anonymous', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://web.test', 'x-forwarded-for': ip }, body: '{}' })
+  const row = repo.raw.prepare('SELECT ipAddress FROM session ORDER BY createdAt DESC LIMIT 1').get() as { ipAddress: string } | undefined
+  expect(row?.ipAddress).toBe(ip) // advanced.ipAddress.ipAddressHeaders trusts the header
+})
+
 test('magic link logs in and marks the account verified', async () => {
   const { app, mail, repo } = await makeApp()
   const r = await app.request('/api/auth/sign-in/magic-link', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://web.test', 'x-forwarded-for': uniqueIp() }, body: JSON.stringify({ email: 'm@b.test' }) })

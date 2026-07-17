@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ url }) => {
 }
 
 export const actions = {
-	reset: async ({ request, fetch, cookies, url }) => {
+	reset: async ({ request, fetch, cookies, url, getClientAddress }) => {
 		const form = await request.formData()
 		const token = String(form.get('token') ?? '')
 		const newPassword = String(form.get('newPassword') ?? '')
@@ -18,7 +18,7 @@ export const actions = {
 		const cookie = cookieHeader(cookies)
 		const res = await fetch(`${base()}/api/auth/reset-password`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json', origin: url.origin, ...(cookie ? { cookie } : {}) },
+			headers: { 'content-type': 'application/json', origin: url.origin, 'x-forwarded-for': getClientAddress(), ...(cookie ? { cookie } : {}) },
 			body: JSON.stringify({ newPassword, token })
 		})
 		if (!res.ok) {

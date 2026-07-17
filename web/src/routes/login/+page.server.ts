@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ url }) => {
 }
 
 export const actions = {
-	login: async ({ request, fetch, cookies, url }) => {
+	login: async ({ request, fetch, cookies, url, getClientAddress }) => {
 		const form = await request.formData()
 		const email = String(form.get('email') ?? '').trim()
 		const password = String(form.get('password') ?? '')
@@ -18,7 +18,7 @@ export const actions = {
 		const cookie = cookieHeader(cookies)
 		const res = await fetch(`${base()}/api/auth/sign-in/email`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json', origin: url.origin, ...(cookie ? { cookie } : {}) },
+			headers: { 'content-type': 'application/json', origin: url.origin, 'x-forwarded-for': getClientAddress(), ...(cookie ? { cookie } : {}) },
 			body: JSON.stringify({ email, password })
 		})
 		if (!res.ok) {
@@ -28,14 +28,14 @@ export const actions = {
 		relaySetCookies(cookies, res)
 		throw redirect(303, '/')
 	},
-	magic: async ({ request, fetch, cookies, url }) => {
+	magic: async ({ request, fetch, cookies, url, getClientAddress }) => {
 		const form = await request.formData()
 		const email = String(form.get('email') ?? '').trim()
 		if (!email) return fail(400, { error: 'email is required' })
 		const cookie = cookieHeader(cookies)
 		const res = await fetch(`${base()}/api/auth/sign-in/magic-link`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json', origin: url.origin, ...(cookie ? { cookie } : {}) },
+			headers: { 'content-type': 'application/json', origin: url.origin, 'x-forwarded-for': getClientAddress(), ...(cookie ? { cookie } : {}) },
 			body: JSON.stringify({ email })
 		})
 		if (!res.ok) {

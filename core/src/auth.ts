@@ -50,7 +50,12 @@ export function createAuth(deps: AuthDeps) {
     // disableOriginCheck defaults to true under NODE_ENV=test (better-auth's
     // isTest() shortcut) — pin it off so CSRF/origin checks are real in our
     // own (vitest) test suite too, not just in production.
-    advanced: { cookiePrefix: 'textcaster', disableOriginCheck: false },
+    // Core is never browser-facing: /api/auth traffic arrives from the web
+    // layer, which sets x-forwarded-for from SvelteKit's getClientAddress()
+    // (itself resolved from the edge proxy, not client-spoofable). Trust that
+    // header so the per-IP rate limits use the real client, not one shared
+    // global bucket (probed: session.ipAddress then reflects the header).
+    advanced: { cookiePrefix: 'textcaster', disableOriginCheck: false, ipAddress: { ipAddressHeaders: ['x-forwarded-for'] } },
     plugins: [
       magicLink({
         sendMagicLink: async ({ email, url }) => {

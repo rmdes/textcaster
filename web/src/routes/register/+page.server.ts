@@ -6,7 +6,7 @@ import { env } from '$env/dynamic/private'
 const base = () => env.CORE_API_URL ?? 'http://localhost:8787'
 
 export const actions = {
-	register: async ({ request, fetch, cookies, url }) => {
+	register: async ({ request, fetch, cookies, url, getClientAddress }) => {
 		const form = await request.formData()
 		const email = String(form.get('email') ?? '').trim()
 		const password = String(form.get('password') ?? '')
@@ -16,7 +16,7 @@ export const actions = {
 		// better-auth links (onLinkAccount re-points the core user server-side)
 		const res = await fetch(`${base()}/api/auth/sign-up/email`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json', origin: url.origin, ...(cookie ? { cookie } : {}) },
+			headers: { 'content-type': 'application/json', origin: url.origin, 'x-forwarded-for': getClientAddress(), ...(cookie ? { cookie } : {}) },
 			body: JSON.stringify({ email, password, name: email.split('@')[0] })
 		})
 		if (!res.ok) {
