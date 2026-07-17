@@ -4,14 +4,14 @@ import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
 import { ensureCoreUser } from '../src/api/auth.ts'
-import { makeAuth, anonSession } from './auth-helper.ts'
+import { makeAuth, anonSession, registeredSession } from './auth-helper.ts'
 
 async function makeApp() {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
   const auth = makeAuth(repo)
-  const app = createApp({ service, bus, token: 'secret', auth })
+  const app = createApp({ service, bus, token: 'secret', auth, users: repo })
   return { app, repo, service, auth }
 }
 
@@ -97,4 +97,36 @@ test('login while anonymous abandons the guest core user (orphaned, reclaimed in
 
   const guestAfter = await repo.getUser(guest.id)
   expect(guestAfter?.authUserId).toBe(anonAuthId) // still points at the now-deleted anon auth row: orphaned
+})
+
+test('user actions 401 without a session; 403 gates for anonymous', async () => {
+  const { app } = await makeApp()
+  expect((await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"content":"x"}' })).status).toBe(401)
+  expect((await app.request('/me')).status).toBe(401)
+  const anon = await anonSession(app)
+  const addFeed = await app.request('/users', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: anon },
+    body: JSON.stringify({ handle: 'feed1', displayName: 'Feed', feedUrl: 'http://e.example/f.xml' }),
+  })
+  expect(addFeed.status).toBe(403) // anonymous cannot create feeds
+  const reg = await registeredSession(app, 'r@test.example')
+  const addFeed2 = await app.request('/users', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: reg },
+    body: JSON.stringify({ handle: 'feed1', displayName: 'Feed', feedUrl: 'http://e.example/f.xml' }),
+  })
+  expect(addFeed2.status).toBe(201)
+})
+
+test('PATCH /me renames; posts and follows survive; 409 on conflict', async () => {
+  const { app } = await makeApp()
+  const cookie = await anonSession(app)
+  await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: '{"content":"hello"}' })
+  const before = (await (await app.request('/me', { headers: { cookie } })).json()).user
+  const renamed = await app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie }, body: '{"handle":"ricardo","displayName":"Ricardo"}' })
+  expect(renamed.status).toBe(200)
+  const timeline = (await (await app.request('/timeline')).json()).timeline
+  expect(timeline[0].author.handle).toBe('ricardo')
+  expect(timeline[0].author.id).toBe(before.id) // same identity, no data moved
 })

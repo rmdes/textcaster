@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { bodyLimit } from 'hono/body-limit'
-import { bearerAuth } from './auth.ts'
+import { sessionAuth, registeredOnly, sessionOrToken } from './auth.ts'
+import type { UserDirectory } from './auth.ts'
 import { parseCursor, formatCursor } from './cursor.ts'
-import { DomainError } from '../domain/types.ts'
+import { DomainError, HandleTakenError } from '../domain/types.ts'
 import { renderRssFeed, renderJsonFeed, renderCommentsFeed, injectSourceComments } from '../domain/feed.ts'
 import { buildFollowingOpml, importFollowingOpml } from '../domain/opml.ts'
 import type { FeedContext } from '../domain/feed.ts'
@@ -52,7 +53,7 @@ const MAX_FAT_PING_BYTES = 5 * 1024 * 1024
 const MAX_FORM_BYTES = 64 * 1024
 const rejectOversized = (c: Context) => c.text('payload too large', 413)
 
-export function createApp(deps: { service: Service; bus: EventBus; token: string; auth: Auth; feeds?: FeedContext; pushApi?: PushApi; pushInApi?: PushInApi }): Hono {
+export function createApp(deps: { service: Service; bus: EventBus; token: string; auth: Auth; users: UserDirectory; feeds?: FeedContext; pushApi?: PushApi; pushInApi?: PushInApi }): Hono {
   const { service, bus, token } = deps
   const feeds: FeedContext = deps.feeds ?? { publicUrl: null, hubUrl: null, rssCloud: false }
   const app = new Hono()
@@ -67,7 +68,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
 
   app.on(['GET', 'POST'], '/api/auth/*', (c) => deps.auth.handler(c.req.raw))
 
-  app.post('/users', bearerAuth(token), async (c) => {
+  app.post('/users', sessionOrToken(token, deps.auth, deps.users), async (c) => {
     const body = await readJsonBody(c)
     if (!body) return c.json({ error: 'body invalid' }, 400)
     const { handle, displayName, feedUrl } = body
@@ -79,12 +80,10 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.json({ user }, 201)
   })
 
-  app.post('/posts', bearerAuth(token), async (c) => {
+  app.post('/posts', sessionAuth(deps.auth, deps.users), async (c) => {
     const body = await readJsonBody(c)
     if (!body) return c.json({ error: 'body invalid' }, 400)
-    const { handle, displayName, content, inReplyTo } = body
-    if (!isString(handle, 1, 64)) return c.json({ error: 'handle invalid' }, 400)
-    if (displayName !== undefined && !isString(displayName, 0, 200)) return c.json({ error: 'displayName invalid' }, 400)
+    const { content, inReplyTo } = body
     if (!isString(content, 1, 100000)) return c.json({ error: 'content invalid' }, 400)
     if (inReplyTo !== undefined && !isString(inReplyTo, 1, 64)) return c.json({ error: 'inReplyTo invalid' }, 400)
     let replyTarget
@@ -92,8 +91,8 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
       replyTarget = await service.getPost(inReplyTo)
       if (!replyTarget) return c.json({ error: 'unknown post' }, 404)
     }
-    const effectiveDisplayName = typeof displayName === 'string' && displayName.trim() !== '' ? displayName : handle
-    const post = await service.createLocalPostAs(handle, effectiveDisplayName, content, replyTarget)
+    const me = c.get('coreUser')
+    const post = await service.createLocalPostAs(me.handle, me.displayName, content, replyTarget)
     return c.json({ post }, 201)
   })
 
@@ -101,21 +100,39 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return service.getUserByHandle(handleRaw.toLowerCase())
   }
 
-  app.post('/users/:handle/follows', bearerAuth(token), async (c) => {
+  app.get('/me', sessionAuth(deps.auth, deps.users), (c) => c.json({ user: c.get('coreUser'), isAnonymous: c.get('sessionIsAnonymous') }))
+
+  app.patch('/me', sessionAuth(deps.auth, deps.users), async (c) => {
+    const body = await readJsonBody(c)
+    if (!body) return c.json({ error: 'body invalid' }, 400)
+    const { handle, displayName } = body
+    if (handle !== undefined && !isString(handle, 1, 64)) return c.json({ error: 'handle invalid' }, 400)
+    if (displayName !== undefined && !isString(displayName, 1, 200)) return c.json({ error: 'displayName invalid' }, 400)
+    try {
+      const user = await service.updateUserProfile(c.get('coreUser').id, {
+        ...(handle !== undefined ? { handle: handle.toLowerCase() } : {}),
+        ...(displayName !== undefined ? { displayName } : {}),
+      })
+      return c.json({ user })
+    } catch (err) {
+      if (err instanceof HandleTakenError) return c.json({ error: 'handle already taken' }, 409)
+      throw err
+    }
+  })
+
+  app.post('/me/follows', sessionAuth(deps.auth, deps.users), async (c) => {
     const body = await readJsonBody(c)
     if (!body || !isString(body.handle, 1, 64)) return c.json({ error: 'handle invalid' }, 400)
-    const follower = await resolveUser(c.req.param('handle') ?? '')
     const target = await resolveUser(body.handle)
-    if (!follower || !target) return c.json({ error: 'unknown user' }, 404)
-    await service.addFollow(follower, target) // throws DomainError → 400 if follower not local
+    if (!target) return c.json({ error: 'unknown user' }, 404)
+    await service.addFollow(c.get('coreUser'), target)
     return c.json({ ok: true }, 200)
   })
 
-  app.delete('/users/:handle/follows/:target', bearerAuth(token), async (c) => {
-    const follower = await resolveUser(c.req.param('handle') ?? '')
+  app.delete('/me/follows/:target', sessionAuth(deps.auth, deps.users), async (c) => {
     const target = await resolveUser(c.req.param('target') ?? '')
-    if (!follower || !target) return c.json({ error: 'unknown user' }, 404)
-    await service.removeFollow(follower.id, target.id)
+    if (!target) return c.json({ error: 'unknown user' }, 404)
+    await service.removeFollow(c.get('coreUser').id, target.id)
     return c.json({ ok: true }, 200)
   })
 
@@ -154,10 +171,8 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.body(opml, 200, { 'content-type': 'text/xml; charset=utf-8' })
   })
 
-  app.post('/users/:handle/follows/opml', bearerAuth(token), bodyLimit({ maxSize: 1024 * 1024, onError: rejectOversized }), async (c) => {
-    const follower = await resolveUser(c.req.param('handle') ?? '')
-    if (!follower) return c.json({ error: 'unknown user' }, 404)
-    if (follower.kind !== 'local') return c.json({ error: 'follower must be a local user' }, 400)
+  app.post('/me/follows/opml', sessionAuth(deps.auth, deps.users), registeredOnly(), bodyLimit({ maxSize: 1024 * 1024, onError: rejectOversized }), async (c) => {
+    const follower = c.get('coreUser')
     const body = await c.req.text()
     const result = await importFollowingOpml(
       {

@@ -43,12 +43,12 @@ test('REAL-TIME LOOP: B receives A post via WebSub fat ping, no polling', async 
   const pushInB = createPushIn({ repo: B.repo, config: B.config, fetchFn: bridge, lookupFn: publicLookup })
 
   const appA = createApp({
-    service: A.service, bus: A.bus, token: 'a', auth: makeAuth(A.repo),
+    service: A.service, bus: A.bus, token: 'a', auth: makeAuth(A.repo), users: A.repo,
     feeds: { publicUrl: 'https://a.example', hubUrl: 'https://a.example/hub', rssCloud: false },
     pushApi: { websub: (form) => handleWebSubRequest({ repo: A.repo, config: A.config, fetchFn: bridge, lookupFn: publicLookup }, form) },
   })
   const appB = createApp({
-    service: B.service, bus: B.bus, token: 'b', auth: makeAuth(B.repo),
+    service: B.service, bus: B.bus, token: 'b', auth: makeAuth(B.repo), users: B.repo,
     pushInApi: {
       websubVerify: (token, query) => pushInB.handleWebSubVerification(token, query),
       websubDeliver: (token, body, sig) => pushInB.handleFatPing(token, body, sig, { bus: B.bus }),
@@ -87,7 +87,7 @@ test('tampered fat ping is silently discarded end to end (H2)', async () => {
   const pushInB = createPushIn({ repo: B.repo, config: B.config, lookupFn: publicLookup })
   const u = await B.repo.createRemoteUser({ handle: 'x', displayName: 'X', feedUrl: 'https://x.example/f.xml' })
   await B.repo.upsertPushSubscription({ id: 't1', userId: u.id, mode: 'websub', endpoint: 'https://hub.x/h', topic: 'https://x.example/f.xml', callbackToken: 'tok-t', secret: 'shh', state: 'active', expiresAt: new Date(Date.now() + 86400000).toISOString(), createdAt: '2026-01-01T00:00:00.000Z' })
-  const appB = createApp({ service: createService(B.repo, B.bus), bus: B.bus, token: 'b', auth: makeAuth(B.repo), pushInApi: { websubVerify: (t, q) => pushInB.handleWebSubVerification(t, q), websubDeliver: (t, b2, s) => pushInB.handleFatPing(t, b2, s, { bus: B.bus }) } })
+  const appB = createApp({ service: createService(B.repo, B.bus), bus: B.bus, token: 'b', auth: makeAuth(B.repo), users: B.repo, pushInApi: { websubVerify: (t, q) => pushInB.handleWebSubVerification(t, q), websubDeliver: (t, b2, s) => pushInB.handleFatPing(t, b2, s, { bus: B.bus }) } })
   const body = '<?xml version="1.0"?><rss version="2.0"><channel><title>x</title><link>https://x</link><description>d</description><item><guid>evil-1</guid><description>evil</description></item></channel></rss>'
   const res = await appB.request('/websub/callback/tok-t', { method: 'POST', headers: { 'x-hub-signature': 'sha256=deadbeef' }, body })
   expect(res.status).toBe(202) // never a 4xx — no oracle, no hub-drop
@@ -103,12 +103,12 @@ test('REAL-TIME LOOP (rssCloud): thin ping triggers immediate re-fetch', async (
   const pushA = createPush({ repo: A.repo, config: A.config, fetchFn: bridge })
   const pushInB = createPushIn({ repo: B.repo, config: B.config, fetchFn: bridge, lookupFn: publicLookup })
   routes['https://a.example'] = createApp({
-    service: A.service, bus: A.bus, token: 'a', auth: makeAuth(A.repo),
+    service: A.service, bus: A.bus, token: 'a', auth: makeAuth(A.repo), users: A.repo,
     feeds: { publicUrl: 'https://a.example', hubUrl: null, rssCloud: true },
     pushApi: { rsscloud: (form, ip) => handleRssCloudRequest({ repo: A.repo, config: A.config, fetchFn: bridge, lookupFn: publicLookup }, form, ip) },
   })
   routes['https://b.example'] = createApp({
-    service: B.service, bus: B.bus, token: 'b', auth: makeAuth(B.repo),
+    service: B.service, bus: B.bus, token: 'b', auth: makeAuth(B.repo), users: B.repo,
     pushInApi: {
       websubVerify: (t, q) => pushInB.handleWebSubVerification(t, q),
       websubDeliver: (t, b2, s) => pushInB.handleFatPing(t, b2, s, { bus: B.bus }),

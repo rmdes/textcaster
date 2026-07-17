@@ -13,7 +13,7 @@ async function makeApp(feeds?: FeedContext) {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), feeds })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo, feeds })
   return { repo, service, app }
 }
 

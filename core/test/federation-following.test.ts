@@ -3,29 +3,30 @@ import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
-import { makeAuth } from './auth-helper.ts'
+import { makeAuth, registeredSession } from './auth-helper.ts'
 
 async function instance(publicUrl: string | null) {
   const repo = await createSqliteRepository(':memory:')
   const service = createService(repo, createEventBus())
-  const app = createApp({ service, bus: createEventBus(), token: 'secret', auth: makeAuth(repo), feeds: { publicUrl, hubUrl: null, rssCloud: false } })
+  const app = createApp({ service, bus: createEventBus(), token: 'secret', auth: makeAuth(repo), users: repo, feeds: { publicUrl, hubUrl: null, rssCloud: false } })
   return { repo, service, app }
 }
-const auth = { authorization: 'Bearer secret', 'content-type': 'application/json' }
 
 test('OPML round-trip: instance 1 export → instance 2 import recreates remote follows', async () => {
   const one = await instance('https://one.example')
-  await one.repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
+  const aliceCookie = await registeredSession(one.app, 'alice@test.example')
+  await one.app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice' }) })
   await one.service.addRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
   await one.service.addRemoteUser({ handle: 'blog', displayName: 'Blog', feedUrl: 'https://ex.com/b.xml' })
-  await one.app.request('/users/alice/follows', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'news' }) })
-  await one.app.request('/users/alice/follows', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'blog' }) })
+  await one.app.request('/me/follows', { method: 'POST', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ handle: 'news' }) })
+  await one.app.request('/me/follows', { method: 'POST', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ handle: 'blog' }) })
 
   const opml = await (await one.app.request('/users/alice/following.opml')).text()
 
   const two = await instance('https://two.example')
-  await two.repo.createLocalUser({ handle: 'importer', displayName: 'Importer' })
-  const res = await two.app.request('/users/importer/follows/opml', { method: 'POST', headers: { authorization: 'Bearer secret' }, body: opml })
+  const importerCookie = await registeredSession(two.app, 'importer@test.example')
+  await two.app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: importerCookie }, body: JSON.stringify({ handle: 'importer', displayName: 'Importer' }) })
+  const res = await two.app.request('/me/follows/opml', { method: 'POST', headers: { cookie: importerCookie }, body: opml })
   expect(res.status).toBe(200)
   expect(await res.json()).toEqual({ followed: 2, created: 2, skipped: 0 })
 

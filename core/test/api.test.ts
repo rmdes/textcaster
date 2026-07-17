@@ -3,30 +3,28 @@ import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
-import { makeAuth } from './auth-helper.ts'
+import { makeAuth, anonSession } from './auth-helper.ts'
 
 async function makeApp() {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  return createApp({ service, bus, token: 'secret', auth: makeAuth(repo) })
+  return createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo })
 }
 
-test('POST /posts requires the bearer token', async () => {
+test('POST /posts requires a session', async () => {
   const app = await makeApp()
-  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice', content: 'hi' }) })
-  expect(res.status).toBe(401)
-})
-
-test('POST /posts rejects a wrong token of the same length as the real one', async () => {
-  const app = await makeApp()
-  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer wrongo' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice', content: 'hi' }) })
-  expect(res.status).toBe(401)
+  const bare = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'hi' }) })
+  expect(bare.status).toBe(401)
+  const cookie = await anonSession(app)
+  const withSession = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ content: 'hi' }) })
+  expect(withSession.status).toBe(201)
 })
 
 test('POST /posts then GET /timeline shows the post', async () => {
   const app = await makeApp()
-  const post = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice', content: 'hi there' }) })
+  const cookie = await anonSession(app)
+  const post = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ content: 'hi there' }) })
   expect(post.status).toBe(201)
   const tl = await app.request('/timeline')
   const body = await tl.json()
@@ -41,9 +39,15 @@ test('POST /users adds a remote user', async () => {
   expect((await res.json()).user.kind).toBe('remote')
 })
 
-test('POST /users requires the bearer token', async () => {
+test('POST /users requires the bearer token or a session', async () => {
   const app = await makeApp()
   const res = await app.request('/users', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' }) })
+  expect(res.status).toBe(401)
+})
+
+test('POST /users rejects a wrong token of the same length as the real one', async () => {
+  const app = await makeApp()
+  const res = await app.request('/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer wrongo' }, body: JSON.stringify({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' }) })
   expect(res.status).toBe(401)
 })
 
@@ -55,31 +59,28 @@ test('POST /users rejects a non-http(s) feedUrl', async () => {
 
 test('POST /posts with missing content returns 400', async () => {
   const app = await makeApp()
-  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice' }) })
+  const cookie = await anonSession(app)
+  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({}) })
   expect(res.status).toBe(400)
 })
 
 test('POST /posts with oversized content returns 400', async () => {
   const app = await makeApp()
-  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice', content: 'x'.repeat(100001) }) })
+  const cookie = await anonSession(app)
+  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ content: 'x'.repeat(100001) }) })
   expect(res.status).toBe(400)
 })
 
 test('POST /posts with malformed JSON returns 400, not 500', async () => {
   const app = await makeApp()
-  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: '{ not json' })
+  const cookie = await anonSession(app)
+  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: '{ not json' })
   expect(res.status).toBe(400)
 })
 
 test('POST /users with malformed JSON returns 400, not 500', async () => {
   const app = await makeApp()
   const res = await app.request('/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: '{ not json' })
-  expect(res.status).toBe(400)
-})
-
-test('POST /posts with an invalid handle returns 400', async () => {
-  const app = await makeApp()
-  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'Bad Handle!', displayName: 'Bad', content: 'hi' }) })
   expect(res.status).toBe(400)
 })
 
@@ -90,18 +91,11 @@ test('POST /users with a handle that is already taken returns 400', async () => 
   expect(res.status).toBe(400)
 })
 
-test('POST /posts with a handle belonging to a remote user returns 400 with a JSON error', async () => {
-  const app = await makeApp()
-  await app.request('/users', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' }) })
-  const res = await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'news', displayName: 'News', content: 'hi' }) })
-  expect(res.status).toBe(400)
-  expect((await res.json()).error).toBe('handle belongs to a remote user')
-})
-
 test('timeline pages with before cursor: two pages cover all posts exactly once', async () => {
   const app = await makeApp()
+  const cookie = await anonSession(app)
   for (const content of ['one', 'two', 'three']) {
-    await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'alice', displayName: 'Alice', content }) })
+    await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ content }) })
   }
   const page1 = await (await app.request('/timeline?limit=2')).json()
   expect(page1.timeline.length).toBe(2)
@@ -125,13 +119,6 @@ test('timeline rejects a non-integer limit and clamps out-of-range limits', asyn
   expect((await app.request('/timeline?limit=5000')).status).toBe(200) // clamped to 100
 })
 
-test('a blank displayName falls back to the handle', async () => {
-  const app = await makeApp()
-  await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer secret' }, body: JSON.stringify({ handle: 'alice', displayName: '   ', content: 'hi' }) })
-  const body = await (await app.request('/timeline')).json()
-  expect(body.timeline[0].author.displayName).toBe('alice')
-})
-
 test('POST /hub is 404 when no pushApi is wired', async () => {
   const app = await makeApp()
   expect((await app.request('/hub', { method: 'POST', body: new URLSearchParams({ 'hub.mode': 'subscribe' }) })).status).toBe(404)
@@ -148,7 +135,7 @@ test('fat-ping route enforces the 5MB body cap before delivery', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: deliver } })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo, pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: deliver } })
   // content-length pre-check path
   const lying = await app.request('/websub/callback/tok', { method: 'POST', headers: { 'content-length': String(10 * 1024 * 1024) }, body: 'small' })
   expect(lying.status).toBe(413)
@@ -170,7 +157,7 @@ test('rsscloud notify route enforces the 64KB form body cap', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: async () => 202, rsscloudPing: ping } })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo, pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: async () => 202, rsscloudPing: ping } })
   const big = new URLSearchParams({ url: 'x'.repeat(64 * 1024 + 1) })
   const res = await app.request('/rsscloud/notify', { method: 'POST', body: big })
   expect(res.status).toBe(413)

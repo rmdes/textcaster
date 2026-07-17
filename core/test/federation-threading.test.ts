@@ -4,7 +4,7 @@ import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
 import { ingestRemoteUser } from '../src/domain/ingest.ts'
-import { makeAuth } from './auth-helper.ts'
+import { makeAuth, registeredSession } from './auth-helper.ts'
 
 // The primary feedUrl fetch is SSRF-guarded (checkCallbackUrl); default real DNS
 // won't resolve the fake .example/.ex test hosts used across this bridge, so
@@ -15,7 +15,7 @@ async function instance(publicUrl: string) {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), feeds: { publicUrl, hubUrl: null, rssCloud: false } })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo, feeds: { publicUrl, hubUrl: null, rssCloud: false } })
   // fetchFn that serves this instance's own routes for its public origin
   const serve = async (url: string | URL | Request) => {
     const u = new URL(String(url))
@@ -23,14 +23,20 @@ async function instance(publicUrl: string) {
   }
   return { repo, bus, service, app, serve }
 }
-const auth = { authorization: 'Bearer secret', 'content-type': 'application/json' }
+
+async function registeredAs(app: Awaited<ReturnType<typeof instance>>['app'], email: string, handle: string, displayName: string): Promise<string> {
+  const cookie = await registeredSession(app, email)
+  await app.request('/me', { method: 'PATCH', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ handle, displayName }) })
+  return cookie
+}
 
 test('MONEY TEST: a conversation federates over plain RSS, round trip, threadwalker-walkable', async () => {
   const A = await instance('https://a.example')
   const B = await instance('https://b.example')
 
   // A: alice posts
-  const orig = await (await A.app.request('/posts', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'alice', content: 'hello from A' }) })).json()
+  const aliceCookie = await registeredAs(A.app, 'alice@test.example', 'alice', 'Alice')
+  const orig = await (await A.app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie: aliceCookie }, body: JSON.stringify({ content: 'hello from A' }) })).json()
 
   // B follows alice's feed and ingests the post
   const aliceOnB = await B.repo.createRemoteUser({ handle: 'alice-a', displayName: 'Alice', feedUrl: 'https://a.example/users/alice/feed.xml' })
@@ -39,7 +45,8 @@ test('MONEY TEST: a conversation federates over plain RSS, round trip, threadwal
   const ingested = (await B.repo.getTimeline(10)).find((e) => e.content === '<p>hello from A</p>')!
 
   // B: bob replies via the reply button (target = the ingested copy)
-  await B.app.request('/posts', { method: 'POST', headers: auth, body: JSON.stringify({ handle: 'bob', content: 'reply from B', inReplyTo: ingested.id }) })
+  const bobCookie = await registeredAs(B.app, 'bob@test.example', 'bob', 'Bob')
+  await B.app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie: bobCookie }, body: JSON.stringify({ content: 'reply from B', inReplyTo: ingested.id }) })
 
   // B's feed carries both reply forms
   const bobFeed = await (await B.app.request('/users/bob/feed.xml')).text()

@@ -9,7 +9,7 @@ test('GET /timeline/stream emits an SSE "post" frame when a post is created', as
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo) })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo })
 
   const res = await app.request('/timeline/stream')
   expect(res.headers.get('content-type')).toContain('text/event-stream')
@@ -49,7 +49,7 @@ test('reconnect with Last-Event-ID replays missed posts (inclusive, arrival orde
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo) })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo })
 
   const anchor = await service.createLocalPostAs('alice', 'Alice', 'anchor post')
   const news = await repo.createRemoteUser({ handle: 'news', displayName: 'News', feedUrl: 'https://ex.com/f.xml' })
@@ -70,7 +70,7 @@ test('reconnect too stale (over the replay cap) skips replay but still goes live
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo) })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo })
 
   const anchor = await service.createLocalPostAs('alice', 'Alice', 'anchor post')
   const base = Date.parse(anchor.createdAt)
@@ -90,7 +90,7 @@ test('an unknown Last-Event-ID skips replay silently and goes live', async () =>
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo) })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo })
 
   const res = await app.request('/timeline/stream', { headers: { 'Last-Event-ID': 'no-such-post' } })
   await new Promise((r) => setTimeout(r, 20))
@@ -104,7 +104,7 @@ test('a replay query failure degrades to live-only instead of killing the stream
   const bus = createEventBus()
   const service = createService(repo, bus)
   const broken = { ...service, getPost: async () => { throw new Error('db exploded') } }
-  const app = createApp({ service: broken as typeof service, bus, token: 'secret', auth: makeAuth(repo) })
+  const app = createApp({ service: broken as typeof service, bus, token: 'secret', auth: makeAuth(repo), users: repo })
 
   const res = await app.request('/timeline/stream', { headers: { 'Last-Event-ID': 'whatever' } })
   await new Promise((r) => setTimeout(r, 20))

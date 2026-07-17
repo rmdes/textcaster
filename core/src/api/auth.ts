@@ -1,5 +1,5 @@
 import { timingSafeEqual, randomUUID } from 'node:crypto'
-import type { MiddlewareHandler } from 'hono'
+import type { MiddlewareHandler, Next } from 'hono'
 import type { Auth } from '../auth.ts'
 import type { User } from '../domain/types.ts'
 import { HandleTakenError } from '../domain/types.ts'
@@ -55,14 +55,14 @@ export function sessionAuth(auth: Auth, users: UserDirectory): MiddlewareHandler
     if (!session) return c.json({ error: 'authentication required' }, 401)
     c.set('coreUser', await ensureCoreUser(users, session.user.id))
     c.set('sessionIsAnonymous', (session.user as { isAnonymous?: boolean | null }).isAnonymous === true)
-    await next()
+    return next() // must propagate: sessionOrToken composes this manually, outside Hono's own dispatch
   }
 }
 
 export function registeredOnly(): MiddlewareHandler {
   return async (c, next) => {
     if (c.get('sessionIsAnonymous')) return c.json({ error: 'registration required' }, 403)
-    await next()
+    return next() // see sessionAuth: propagation matters for sessionOrToken's manual composition
   }
 }
 
@@ -73,6 +73,9 @@ export function sessionOrToken(token: string, auth: Auth, users: UserDirectory):
   return async (c, next) => {
     const header = c.req.header('authorization')
     if (header !== undefined) return bearerAuth(token)(c, next)
-    return viaSession(c, async () => { await mustBeRegistered(c, next) })
+    // Hono types `next` as `() => Promise<void>`, but compose.js (see comment
+    // on sessionAuth above) actually forwards whatever a middleware returns —
+    // mustBeRegistered may resolve to a 403 Response, which viaSession must see.
+    return viaSession(c, (() => mustBeRegistered(c, next)) as unknown as Next)
   }
 }

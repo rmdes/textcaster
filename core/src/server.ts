@@ -26,6 +26,7 @@ const app = createApp({
   bus,
   token: config.token,
   auth,
+  users: repo,
   feeds: { publicUrl: config.publicUrl, hubUrl: hubLinkUrl(config.websub, config.publicUrl), rssCloud: config.rssCloud },
   pushApi:
     config.websub.mode === 'self' || config.rssCloud
