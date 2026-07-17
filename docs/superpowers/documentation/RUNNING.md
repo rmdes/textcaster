@@ -90,6 +90,18 @@ Another Textcaster instance can add either URL as a remote user — that is
 the federation loop. A remote user's handle redirects (302) to their
 canonical feed instead.
 
+- `GET /users/rss.xml` — the firehose: every local post from every local
+  user, newest first, RSS 2.0. Each item carries a core RSS `<source url=…>`
+  naming its author and pointing at their personal feed (the same element
+  our own ingest reads for attribution), so a subscriber can tell items
+  apart even though they share one feed. It's a first-class push topic too —
+  WebSub and rssCloud subscribers can register on it exactly like a
+  per-user feed. Named divergence from the rss.chat/Dave convention
+  (deliberate): rss.chat emits `guid isPermaLink="true"` where the guid IS
+  the permalink; we instead put the shareable permalink in `<link>` and
+  keep `<guid>` an opaque, stable UUID — changing guid values would make
+  every existing post reappear as new to subscribers.
+
 Push is **opt-in** (default: plain feeds, polling only):
 
 | Variable | Values | Meaning |

@@ -15,19 +15,21 @@ async function setup(env: Record<string, string>) {
   return { repo, bus, service, config }
 }
 
-test('external mode publishes a ping per topic on a local post', async () => {
+test('external mode publishes a ping per topic on a local post, including the firehose', async () => {
   const { repo, service, config } = await setup(EXT_ENV)
   const fetchFn = vi.fn(async () => new Response('ok', { status: 204 }))
   const push = createPush({ repo, config, fetchFn: fetchFn as unknown as typeof fetch })
   const entry = await service.createLocalPostAs('alice', 'Alice', 'ping-worthy')
   await push.onLocalPost(entry)
-  expect(fetchFn).toHaveBeenCalledTimes(2)
+  expect(fetchFn).toHaveBeenCalledTimes(3) // author xml + json + firehose
   const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit]
   expect(url).toBe('https://hub.example.com/hub')
   const params = new URLSearchParams(init.body as string)
   expect(params.get('hub.mode')).toBe('publish')
   expect(params.get('hub.topic')).toBe('https://cast.example.com/users/alice/feed.xml')
   expect(params.get('hub.url')).toBe(params.get('hub.topic'))
+  const topics = (fetchFn.mock.calls as unknown as Array<[string, RequestInit]>).map(([, i]) => new URLSearchParams(i.body as string).get('hub.topic'))
+  expect(topics).toContain('https://cast.example.com/users/rss.xml')
 })
 
 test('remote posts and websub-off both produce no pings', async () => {
@@ -277,6 +279,56 @@ test('rsscloud registration whose callback fails the challenge is never stored',
   await vi.waitFor(() => expect(badFetch).toHaveBeenCalledTimes(1)) // challenge GET happened...
   await new Promise((res) => setImmediate(res)) // ...and its rejection settled
   expect(await repo.countActiveSubscriptions({ callbackHost: 'never-consented.example.com' }, '2020-01-01T00:00:00.000Z')).toBe(0)
+})
+
+test('resolveLocalTopic recognizes the firehose topic', async () => {
+  const repo = await createSqliteRepository(':memory:')
+  const r = await resolveLocalTopic(repo, 'https://tc.example', 'https://tc.example/users/rss.xml')
+  expect(r).toEqual({ kind: 'firehose', format: 'xml' })
+  // per-user still resolves, now with kind
+  await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })
+  const u = await resolveLocalTopic(repo, 'https://tc.example', 'https://tc.example/users/alice/feed.xml')
+  expect(u?.kind).toBe('user')
+  // near-misses stay null
+  expect(await resolveLocalTopic(repo, 'https://tc.example', 'https://evil.example/users/rss.xml')).toBeNull()
+})
+
+test('onLocalPost fat-pings firehose subscribers with the firehose XML (self-hub mode)', async () => {
+  const { repo, service, config } = await setup(SELF_ENV)
+  const entry = await service.createLocalPostAs('alice', 'Alice', 'firehose-worthy')
+  const fhTopic = 'https://cast.example.com/users/rss.xml'
+  await repo.upsertSubscription({ id: 'fh1', protocol: 'websub', topic: fhTopic, callback: 'https://cb.example.com/receive', callbackHost: 'cb.example.com', secret: null, expiresAt: '2027-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+  const calls: Array<{ url: string; body: string; ct: string | null; link: string | null }> = []
+  const fetchFn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), body: String(init?.body), ct: new Headers(init?.headers).get('content-type'), link: new Headers(init?.headers).get('link') })
+    return new Response('', { status: 200 })
+  })
+  const push = createPush({ repo, config, fetchFn: fetchFn as unknown as typeof fetch })
+  await push.onLocalPost(entry)
+  const fhDeliveries = calls.filter((c) => c.url === 'https://cb.example.com/receive')
+  expect(fhDeliveries.length).toBe(1)
+  expect(fhDeliveries[0].body).toContain(': all posts</title>')
+  expect(fhDeliveries[0].body).toContain('<source url=')
+  expect(fhDeliveries[0].ct).toContain('application/rss+xml')
+  expect(fhDeliveries[0].link).toContain(`<${fhTopic}>; rel="self"`)
+})
+
+test('onLocalPost rssCloud thin-pings the firehose topic too', async () => {
+  const { repo, service, config } = await setup(CLOUD_ENV)
+  const entry = await service.createLocalPostAs('alice', 'Alice', 'ping me thin')
+  const authorTopic = 'https://cast.example.com/users/alice/feed.xml'
+  const fhTopic = 'https://cast.example.com/users/rss.xml'
+  await repo.upsertSubscription({ id: 'rc1', protocol: 'rsscloud', topic: authorTopic, callback: 'http://cb.example.com:5337/rsscloud/notify', callbackHost: 'cb.example.com', secret: null, expiresAt: '2027-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+  await repo.upsertSubscription({ id: 'rc2', protocol: 'rsscloud', topic: fhTopic, callback: 'http://cb2.example.com:5337/rsscloud/notify', callbackHost: 'cb2.example.com', secret: null, expiresAt: '2027-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z' })
+  const fetchFn = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response('', { status: 200 }))
+  const push = createPush({ repo, config, fetchFn: fetchFn as unknown as typeof fetch })
+  await push.onLocalPost(entry)
+  const authorCall = fetchFn.mock.calls.find((c2) => String(c2[0]) === 'http://cb.example.com:5337/rsscloud/notify')
+  const fhCall = fetchFn.mock.calls.find((c2) => String(c2[0]) === 'http://cb2.example.com:5337/rsscloud/notify')
+  expect(authorCall).toBeTruthy()
+  expect(fhCall).toBeTruthy()
+  expect(new URLSearchParams(String((authorCall![1] as RequestInit).body)).get('url')).toBe(authorTopic)
+  expect(new URLSearchParams(String((fhCall![1] as RequestInit).body)).get('url')).toBe(fhTopic)
 })
 
 test('all callback-bound fetches opt out of redirect following (SSRF bypass guard)', async () => {

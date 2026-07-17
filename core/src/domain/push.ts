@@ -4,7 +4,7 @@ import type { Config } from '../config.ts'
 import type { TimelineEntry } from './types.ts'
 import { checkCallbackUrl } from './push-guard.ts'
 import type { LookupFn } from './push-guard.ts'
-import { feedUrls, renderRssFeed, renderJsonFeed, hubLinkUrl, injectSourceComments } from './feed.ts'
+import { feedUrls, firehoseUrl, renderRssFeed, renderJsonFeed, renderFirehoseRss, hubLinkUrl, injectSourceComments, injectSourceAccounts } from './feed.ts'
 import type { User } from './types.ts'
 
 const PUSH_TIMEOUT_MS = 10_000
@@ -33,8 +33,13 @@ export function cloudScheme(port: number): 'http' | 'https' {
   return port === 443 ? 'https' : 'http'
 }
 
-// H3: exact string equality against the re-minted URL of an existing LOCAL user.
-export async function resolveLocalTopic(repo: Repository, publicUrl: string, topic: string): Promise<{ user: User; format: 'xml' | 'json' } | null> {
+export type ResolvedTopic =
+  | { kind: 'user'; user: User; format: 'xml' | 'json' }
+  | { kind: 'firehose'; format: 'xml' }
+
+// H3: exact string equality against re-minted URLs of known topics.
+export async function resolveLocalTopic(repo: Repository, publicUrl: string, topic: string): Promise<ResolvedTopic | null> {
+  if (topic === firehoseUrl(publicUrl)) return { kind: 'firehose', format: 'xml' }
   const m = /^.*\/users\/([a-z0-9-]{1,64})\/feed\.(xml|json)$/.exec(topic)
   if (!m) return null
   const [, handle, format] = m
@@ -42,7 +47,7 @@ export async function resolveLocalTopic(repo: Repository, publicUrl: string, top
   if (topic !== minted) return null
   const user = await repo.getUserByHandle(handle)
   if (!user || user.kind !== 'local') return null
-  return { user, format: format as 'xml' | 'json' }
+  return { kind: 'user', user, format: format as 'xml' | 'json' }
 }
 
 async function verifyWebSub(deps: Required<Pick<PushDeps, 'repo'>> & { fetchFn: typeof fetch }, mode: 'subscribe' | 'unsubscribe', topic: string, callback: string, callbackHost: string, secret: string | null, leaseSeconds: number): Promise<void> {
@@ -208,6 +213,11 @@ export function createPush(deps: PushDeps): Push {
               console.error(`websub publish ping failed for ${topic}:`, err instanceof Error ? err.message : err)
             }
           }
+          try {
+            await publishPing(config.websub.hubUrl, firehoseUrl(config.publicUrl), fetchFn)
+          } catch (err) {
+            console.error(`websub publish ping failed for ${firehoseUrl(config.publicUrl)}:`, err instanceof Error ? err.message : err)
+          }
         }
 
         if (config.websub.mode === 'self') {
@@ -236,6 +246,26 @@ export function createPush(deps: PushDeps): Push {
               await deliverOnce(fetchFn, sub.callback, body, headers)
             }
           }
+
+          const fhTopic = firehoseUrl(config.publicUrl)
+          const fhSubs = (await repo.listActiveSubscriptions(fhTopic, now)).filter((s) => s.protocol === 'websub')
+          if (fhSubs.length > 0) {
+            const recent = await repo.getRecentLocalPosts(50)
+            let body = renderFirehoseRss(recent, ctx)
+            const host = new URL(config.publicUrl).host
+            body = injectSourceAccounts(body, recent.map((p) => ({ guid: p.guid, service: host, name: p.author.handle })))
+            const fhCounts = await repo.countRepliesByPostIds(recent.map((p) => p.id))
+            body = injectSourceComments(body, recent.filter((p) => (fhCounts.get(p.id) ?? 0) > 0)
+              .map((p) => ({ guid: p.guid, count: fhCounts.get(p.id)!, feedUrl: `${ctx.publicUrl}/post/${p.id}/comments.xml` })))
+            for (const sub of fhSubs) {
+              const headers: Record<string, string> = {
+                'content-type': 'application/rss+xml; charset=utf-8',
+                link: `<${fhTopic}>; rel="self", <${ctx.hubUrl}>; rel="hub"`,
+              }
+              if (sub.secret) headers['x-hub-signature'] = 'sha256=' + createHmac('sha256', sub.secret).update(body).digest('hex')
+              await deliverOnce(fetchFn, sub.callback, body, headers)
+            }
+          }
         }
 
         if (config.rssCloud) {
@@ -244,6 +274,12 @@ export function createPush(deps: PushDeps): Push {
           for (const sub of subs) {
             // Thin ping: subscriber re-fetches the feed itself.
             await deliverOnce(fetchFn, sub.callback, new URLSearchParams({ url: topics.xml }).toString(), { 'content-type': 'application/x-www-form-urlencoded' })
+          }
+
+          const fhTopic = firehoseUrl(config.publicUrl)
+          const fhCloudSubs = (await repo.listActiveSubscriptions(fhTopic, now)).filter((s) => s.protocol === 'rsscloud')
+          for (const sub of fhCloudSubs) {
+            await deliverOnce(fetchFn, sub.callback, new URLSearchParams({ url: fhTopic }).toString(), { 'content-type': 'application/x-www-form-urlencoded' })
           }
         }
       } catch (err) {
