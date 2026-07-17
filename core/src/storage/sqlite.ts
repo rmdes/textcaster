@@ -220,6 +220,20 @@ export class SqliteRepository implements Repository {
     return rows.map(rowToPost)
   }
 
+  async getRecentLocalPosts(limit: number): Promise<TimelineEntry[]> {
+    const rows = await this.db
+      .selectFrom('posts')
+      .innerJoin('users', 'users.id', 'posts.author_id')
+      .selectAll('posts')
+      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id'])
+      .where('users.kind', '=', 'local')
+      .orderBy('posts.published_at', 'desc')
+      .orderBy('posts.id', 'desc')
+      .limit(limit)
+      .execute()
+    return rows.map(joinedRowToEntry)
+  }
+
   async findPostByRef(ref: string): Promise<Post | undefined> {
     // Pinned rule (spec H2 + Hole A): each arm matches ONLY when exactly one
     // row holds the ref — ambiguity resolves to nothing, never to an arbitrary row.

@@ -441,5 +441,18 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       expect(await repo.countRepliesByPostIds([])).toEqual(new Map())
       expect((await repo.listRepliesByPostId('root')).map((p) => p.id)).toEqual(['r1', 'r2'])
     })
+
+    test('getRecentLocalPosts: local authors only, newest first, limited', async () => {
+      const repo = await makeRepo()
+      const local = await repo.createLocalUser({ handle: 'loc', displayName: 'Loc' })
+      const remote = await repo.createRemoteUser({ handle: 'rem', displayName: 'Rem', feedUrl: 'https://r.ex/f' })
+      await repo.insertPost(mkPost({ id: 'l1', authorId: local.id, guid: 'l1', publishedAt: '2026-01-01T00:00:00.000Z' }))
+      await repo.insertPost(mkPost({ id: 'l2', authorId: local.id, guid: 'l2', publishedAt: '2026-01-02T00:00:00.000Z' }))
+      await repo.insertPost(mkPost({ id: 'r1', authorId: remote.id, guid: 'r1', publishedAt: '2026-01-03T00:00:00.000Z' }))
+      const entries = await repo.getRecentLocalPosts(10)
+      expect(entries.map((e) => e.id)).toEqual(['l2', 'l1']) // remote excluded, newest first
+      expect(entries[0].author.handle).toBe('loc') // author joined inline
+      expect((await repo.getRecentLocalPosts(1)).map((e) => e.id)).toEqual(['l2'])
+    })
   })
 }

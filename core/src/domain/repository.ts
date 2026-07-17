@@ -27,6 +27,7 @@ export interface Repository {
   countRepliesByPostIds(ids: string[]): Promise<Map<string, number>>
   listRepliesByPostId(id: string): Promise<Post[]>
   getPostsByAuthor(authorId: string, limit: number): Promise<Post[]>
+  getRecentLocalPosts(limit: number): Promise<TimelineEntry[]>
   upsertSubscription(s: Subscription): Promise<void>
   deleteSubscription(protocol: PushProtocol, topic: string, callback: string): Promise<void>
   listActiveSubscriptions(topic: string, now: string): Promise<Subscription[]>

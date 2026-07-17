@@ -100,6 +100,9 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
     getPostsByAuthor(authorId: string, limit: number) {
       return repo.getPostsByAuthor(authorId, limit)
     },
+    getRecentLocalPosts(limit: number) {
+      return repo.getRecentLocalPosts(limit)
+    },
     async addFollow(follower: User, target: User): Promise<void> {
       if (follower.kind !== 'local') throw new DomainError('follower must be a local user')
       await repo.addFollow(follower.id, target.id)
