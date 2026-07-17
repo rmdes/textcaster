@@ -1,6 +1,6 @@
 // Compose drafts in localStorage: closing the dialog (backdrop, Esc, reload)
 // never loses writing. Callers clear on confirmed submit success only.
-export type Draft = { handle?: string; displayName?: string; content?: string }
+export type Draft = { content?: string }
 
 const PREFIX = 'textcaster:draft:'
 

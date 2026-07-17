@@ -48,18 +48,21 @@
 			title="New post"
 			submitLabel="Post"
 			placeholder="what's happening?"
-			showDisplayName
 		/>
 
-		<details class="panel">
-			<summary>Add remote user</summary>
-			<form method="POST" action="?/addRemote" class="add-remote">
-				<input name="handle" placeholder="remote handle" required />
-				<input name="displayName" placeholder="display name (optional)" />
-				<input name="feedUrl" type="url" placeholder="https://their-site.com/feed.xml" required />
-				<button>Add remote user</button>
-			</form>
-		</details>
+		{#if data.me && !data.me.isAnonymous}
+			<details class="panel">
+				<summary>Add remote user</summary>
+				<form method="POST" action="?/addRemote" class="add-remote">
+					<input name="handle" placeholder="remote handle" required />
+					<input name="displayName" placeholder="display name (optional)" />
+					<input name="feedUrl" type="url" placeholder="https://their-site.com/feed.xml" required />
+					<button>Add remote user</button>
+				</form>
+			</details>
+		{:else}
+			<p class="auth-note">Register to add feeds.</p>
+		{/if}
 	</aside>
 
 	<main>

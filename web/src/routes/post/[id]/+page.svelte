@@ -15,20 +15,18 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	// Reply draft, keyed per post: navigating away and back resumes the reply.
-	// Cleared only on confirmed submit success (handle survives — it's identity).
+	// Cleared only on confirmed submit success.
 	const draftKey = $derived(`reply:${data.postId}`)
-	let handle = $state('')
 	let content = $state('')
 	let replyError = $state('')
 	let restored = $state(false)
 	$effect(() => {
 		const d = loadDraft(draftKey)
-		handle = d.handle ?? ''
 		content = d.content ?? ''
 		restored = true
 	})
 	$effect(() => {
-		if (restored) saveDraft(draftKey, { handle, content })
+		if (restored) saveDraft(draftKey, { content })
 	})
 	const submitReply: SubmitFunction = () =>
 		async ({ result, update }) => {
@@ -107,7 +105,6 @@
 		<summary>Reply</summary>
 		{#if replyError}<p class="error" role="alert">{replyError}</p>{/if}
 		<form method="POST" action="?/reply" class="composer" use:enhance={submitReply}>
-			<input name="handle" placeholder="your handle" required bind:value={handle} />
 			<MarkdownComposer placeholder="write a reply" bind:value={content} />
 			<button>Reply</button>
 		</form>

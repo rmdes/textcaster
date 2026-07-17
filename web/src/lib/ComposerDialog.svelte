@@ -9,19 +9,15 @@
 		action,
 		title,
 		submitLabel,
-		placeholder = '',
-		showDisplayName = false
+		placeholder = ''
 	}: {
 		draftKey: string
 		action: string
 		title: string
 		submitLabel: string
 		placeholder?: string
-		showDisplayName?: boolean
 	} = $props()
 
-	let handle = $state('')
-	let displayName = $state('')
 	let content = $state('')
 	let error = $state('')
 	let dialog = $state<HTMLDialogElement>()
@@ -38,15 +34,13 @@
 	let enhanced = $state(false)
 	$effect(() => {
 		const d = loadDraft(draftKey)
-		handle = d.handle ?? ''
-		displayName = d.displayName ?? ''
 		content = d.content ?? ''
 		enhanced = true
 	})
 
 	// Every edit persists; dismissing the dialog can never lose writing.
 	$effect(() => {
-		if (enhanced) saveDraft(draftKey, { handle, displayName, content })
+		if (enhanced) saveDraft(draftKey, { content })
 	})
 
 	// The badge signals resumable WRITING — a remembered handle alone isn't a draft.
@@ -59,9 +53,7 @@
 			} else if (result.type === 'error') {
 				error = 'Something went wrong'
 			} else {
-				// Confirmed success: only now does the draft die. Handle and
-				// display name stay — they're identity, not writing — and the
-				// save effect persists that trimmed state.
+				// Confirmed success: only now does the draft die.
 				error = ''
 				content = ''
 				dialog?.close()
@@ -99,10 +91,6 @@
 			</header>
 			{#if error}<p class="error" role="alert">{error}</p>{/if}
 			<form method="POST" {action} class="composer" use:enhance={submit}>
-				<input name="handle" placeholder="your handle" required bind:value={handle} />
-				{#if showDisplayName}
-					<input name="displayName" placeholder="display name (optional)" bind:value={displayName} />
-				{/if}
 				{#if isOpen}
 					<MarkdownComposer {placeholder} bind:value={content} />
 				{/if}
@@ -114,10 +102,6 @@
 	<details class="panel" open>
 		<summary>{title}</summary>
 		<form method="POST" {action} class="composer">
-			<input name="handle" placeholder="your handle" required />
-			{#if showDisplayName}
-				<input name="displayName" placeholder="display name (optional)" />
-			{/if}
 			<MarkdownComposer {placeholder} />
 			<button>{submitLabel}</button>
 		</form>

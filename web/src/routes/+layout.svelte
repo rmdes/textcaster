@@ -1,12 +1,31 @@
 <script lang="ts">
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import type { LayoutData } from './$types';
 
-	let { children } = $props();
+	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 </script>
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
+
+<div class="identity-bar">
+	{#if !data.me}
+		<div>Browsing as a guest — post or follow to get an identity. <a href="/login">Log in</a> · <a href="/register">Register</a></div>
+	{:else if data.me.isAnonymous}
+		<div>
+			<a class="handle" href="/u/{data.me.user.handle}">@{data.me.user.handle}</a>
+			<a class="identity-cta" href="/register">Register to keep this account</a>
+			<a href="/settings">Settings</a>
+		</div>
+	{:else}
+		<div>
+			{data.me.user.displayName} <a class="handle" href="/u/{data.me.user.handle}">@{data.me.user.handle}</a>
+			<a href="/settings">Settings</a>
+			<form method="POST" action="/login?/logout" class="logout-form"><button type="submit">Log out</button></form>
+		</div>
+	{/if}
+</div>
 
 {@render children()}

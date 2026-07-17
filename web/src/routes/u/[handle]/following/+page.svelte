@@ -50,6 +50,8 @@
 		<p class="import-result">Imported: {form.result.followed} followed, {form.result.created} created, {form.result.skipped} skipped.</p>
 	{/if}
 
+	<p class="auth-note">Following and unfollowing here act as you, not as @{data.handle}.</p>
+
 	<details class="panel" open>
 		<summary>Follow someone</summary>
 		<form method="POST" action="?/follow" class="follow-form">
@@ -59,17 +61,21 @@
 		</form>
 	</details>
 
-	<details class="panel">
-		<summary>Import OPML</summary>
-		<form method="POST" action="?/import" enctype="multipart/form-data" class="import-form">
-			<label class="visually-hidden" for="import-opml">OPML file to import</label>
-			<input id="import-opml" type="file" name="opml" accept=".opml,.xml,text/xml" required />
-			<button>Import OPML</button>
-		</form>
-	</details>
+	{#if data.me && !data.me.isAnonymous}
+		<details class="panel">
+			<summary>Import OPML</summary>
+			<form method="POST" action="?/import" enctype="multipart/form-data" class="import-form">
+				<label class="visually-hidden" for="import-opml">OPML file to import</label>
+				<input id="import-opml" type="file" name="opml" accept=".opml,.xml,text/xml" required />
+				<button>Import OPML</button>
+			</form>
+		</details>
+	{:else}
+		<p class="auth-note">Register to add feeds.</p>
+	{/if}
 
 	<section>
-		<h2>Following</h2>
+		<h2>@{data.handle}'s following</h2>
 		{#if data.following.length === 0}
 			<p class="subnav">Not following anyone yet.</p>
 		{:else}

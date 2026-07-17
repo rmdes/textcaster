@@ -11,8 +11,8 @@ globalThis.localStorage = {
 beforeEach(() => store.clear())
 
 test('save then load round-trips a draft', () => {
-	saveDraft('compose', { handle: 'ric', content: 'hello **world**' })
-	expect(loadDraft('compose')).toEqual({ handle: 'ric', content: 'hello **world**' })
+	saveDraft('compose', { content: 'hello **world**' })
+	expect(loadDraft('compose')).toEqual({ content: 'hello **world**' })
 })
 
 test('a never-saved key loads as an empty draft', () => {
@@ -30,8 +30,8 @@ test('a non-object stored value loads as an empty draft', () => {
 })
 
 test('saving an all-blank draft removes the stored entry', () => {
-	saveDraft('compose', { handle: 'ric', content: 'x' })
-	saveDraft('compose', { handle: '  ', content: '' })
+	saveDraft('compose', { content: 'x' })
+	saveDraft('compose', { content: '  ' })
 	expect(store.has('textcaster:draft:compose')).toBe(false)
 })
 

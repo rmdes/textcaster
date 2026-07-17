@@ -118,6 +118,48 @@ a {
 	}
 }
 
+/* Identity bar — global strip above every page's own masthead. Three states:
+   guest nudge, anonymous (handle + register CTA), registered (name + logout). */
+
+.identity-bar {
+	background: var(--color-surface);
+	border-bottom: 1px solid var(--color-border);
+}
+
+.identity-bar > div {
+	max-width: 90rem;
+	margin: 0 auto;
+	padding: var(--space-sm) var(--space-lg);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-sm);
+	font-size: 0.875rem;
+	color: var(--color-secondary);
+}
+
+.identity-bar .handle {
+	color: var(--color-foreground);
+	font-weight: 600;
+}
+
+.identity-bar .identity-cta {
+	color: var(--color-accent);
+	font-weight: 600;
+}
+
+.identity-bar .logout-form {
+	margin-inline-start: auto;
+}
+
+.identity-bar .logout-form button {
+	background: transparent;
+	color: var(--color-secondary);
+	border: 1px solid var(--color-border);
+	padding: 4px 12px;
+	font-weight: 500;
+}
+
 /* Masthead */
 
 .masthead {
@@ -177,10 +219,20 @@ a {
 /* Forms */
 
 form.composer,
-form.add-remote {
+form.add-remote,
+form.auth-form {
 	display: flex;
 	flex-direction: column;
 	gap: var(--space-sm);
+}
+
+form.auth-form {
+	max-width: 24rem;
+}
+
+.auth-note {
+	color: var(--color-secondary);
+	font-size: 0.875rem;
 }
 
 input,
