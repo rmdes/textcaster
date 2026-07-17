@@ -46,6 +46,19 @@ test('GET forwards upstream error status', async () => {
 	expect(res.status).toBe(500)
 })
 
+test('GET returns a retryable 503 when core is unreachable (fetch rejects)', async () => {
+	// Core restarting under `node --watch` (dev) or a deploy (prod): the upstream
+	// fetch rejects with TypeError. GET must degrade to 503, not throw a 500.
+	global.fetch = vi.fn(async () => {
+		throw new TypeError('fetch failed')
+	}) as unknown as typeof fetch
+
+	const request = new Request('http://x/stream')
+	const res = await GET({ request } as never)
+
+	expect(res.status).toBe(503)
+})
+
 test('GET forwards the Last-Event-ID header upstream', async () => {
 	const body = new ReadableStream({
 		start(controller) {

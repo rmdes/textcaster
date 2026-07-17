@@ -10,10 +10,18 @@ export const GET: RequestHandler = async ({ request }) => {
 	// after a hidden tab released its connection) cannot set that header, so
 	// ?last= is the query-param fallback — the header wins when both exist.
 	const lastEventId = request.headers.get('last-event-id') ?? new URL(request.url).searchParams.get('last')
-	const upstream = await fetch(`${base()}/timeline/stream`, {
-		signal: request.signal,
-		headers: lastEventId ? { 'Last-Event-ID': lastEventId } : {}
-	})
+	let upstream: Response
+	try {
+		upstream = await fetch(`${base()}/timeline/stream`, {
+			signal: request.signal,
+			headers: lastEventId ? { 'Last-Event-ID': lastEventId } : {}
+		})
+	} catch {
+		// Core unreachable (restarting under `node --watch` in dev, or a deploy in
+		// prod): return a retryable 503 — EventSource reconnects on its own —
+		// instead of an unhandled 500. Mirrors the load function's coreDown degrade.
+		return new Response('core unavailable', { status: 503 })
+	}
 	if (!upstream.ok) {
 		return new Response(upstream.body, {
 			status: upstream.status,
