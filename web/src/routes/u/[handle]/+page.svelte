@@ -53,6 +53,8 @@
 	<ul class="timeline">
 		{#each posts.filter((p) => !hidden.has(p.id)) as post (post.id)}
 			<li class="post" class:remote={post.source === 'remote'}>
+				{#if post.title}<h2 class="title">{post.title}</h2>{/if}
+				<PostBody {post} />
 				{#if post.replyCount}
 					<a
 						class="wedge"
@@ -60,17 +62,11 @@
 						href="/post/{post.id}"
 						role="button"
 						aria-expanded={!!expanded[post.id]}
-						aria-label="{expanded[post.id] ? 'Hide' : 'Show'} {post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}"
 						onclick={(e) => {
 							e.preventDefault()
 							toggleWedge(post.id)
-						}}>▸</a
-					>
-				{:else}
-					<span class="wedge light" aria-hidden="true">▸</span>
+						}}><span class="glyph" aria-hidden="true">▸</span>{expanded[post.id] ? 'Hide replies' : `${post.replyCount} ${post.replyCount === 1 ? 'reply' : 'replies'}`}</a>
 				{/if}
-				{#if post.title}<h2 class="title">{post.title}</h2>{/if}
-				<PostBody {post} />
 				<a class="source" href="/post/{post.id}">{post.replyCount || post.threadRootId || post.inReplyToPostId ? 'View conversation' : 'Reply'}</a>
 				{#if post.inReplyTo && !post.inReplyToPostId && post.inReplyTo.startsWith('http')}
 					<a class="source" href={post.inReplyTo} rel="noreferrer">in reply to ↗</a>
