@@ -50,9 +50,12 @@ export function relaySetCookies(cookies: Cookies, res: Response): void {
 // to the browser on this same response.
 export async function ensureSessionFetch(event: { fetch: typeof fetch; cookies: Cookies; url: URL }): Promise<typeof fetch> {
 	if (hasSession(event.cookies)) return authedFetch(event.fetch, event.url.origin, cookieHeader(event.cookies))
+	// content-type + a body are required here — better-auth 415s a bodyless
+	// POST through core's Hono mount (probed).
 	const res = await event.fetch(`${base()}/api/auth/sign-in/anonymous`, {
 		method: 'POST',
-		headers: { origin: event.url.origin }
+		headers: { origin: event.url.origin, 'content-type': 'application/json' },
+		body: '{}'
 	})
 	if (!res.ok) throw new Error(`anonymous sign-in failed (${res.status})`)
 	relaySetCookies(event.cookies, res)

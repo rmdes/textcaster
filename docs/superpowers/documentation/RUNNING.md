@@ -20,7 +20,7 @@ npm install
 
 ## Configure
 
-Copy the example env files and fill in a shared token:
+Copy the example env files and fill in the auth secret:
 
 ```bash
 cp core/.env.example core/.env
@@ -31,7 +31,10 @@ cp web/.env.example web/.env
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `TEXTCASTER_TOKEN` | yes | — | Bearer token core requires on writes. |
+| `TEXTCASTER_AUTH_SECRET` | yes | — | better-auth session/cookie signing secret. Generate with `openssl rand -hex 32`. |
+| `TEXTCASTER_TOKEN` | yes | — | Ops bearer token. No longer needed for user actions — its one remaining job is `POST /users` (feed seeding/smoke), also usable there in place of a registered session. |
+| `TEXTCASTER_WEB_ORIGIN` | no | `http://localhost:5173` | Must match the web app's public origin. Any request that carries a session cookie to `/api/auth/*` without a matching `Origin` header is rejected 403 by better-auth's CSRF check. |
+| `TEXTCASTER_ANON_TTL_DAYS` | no | `7` | Anonymous (guest) accounts idle longer than this are reclaimed by an hourly sweep. |
 | `TEXTCASTER_DB` | no | `./data/textcaster.db` | SQLite file path, or `:memory:`. |
 | `TEXTCASTER_PORT` | no | `8787` | HTTP port core listens on. |
 | `TEXTCASTER_POLL_SECONDS` | no | `60` | How often remote feeds are polled. |
@@ -41,12 +44,36 @@ cp web/.env.example web/.env
 | Variable | Required | Notes |
 |---|---|---|
 | `CORE_API_URL` | yes | Base URL of core, e.g. `http://localhost:8787`. |
-| `CORE_API_TOKEN` | yes | **Must equal core's `TEXTCASTER_TOKEN`.** |
 
-There is no `PUBLIC_CORE_SSE_URL` and nothing core-related is marked
-`PUBLIC_*` — the browser never holds the token or a core URL. Live updates
-reach the browser through web's own `/stream` route, which proxies core's
-SSE endpoint server-side.
+Web no longer needs a shared token — it forwards the visitor's own session
+cookie to core instead. Nothing core-related is marked `PUBLIC_*` — the
+browser never holds a core URL. Live updates reach the browser through web's
+own `/stream` route, which proxies core's SSE endpoint server-side.
+
+## Identity & sessions
+
+Textcaster uses [better-auth](https://www.better-auth.com/), mounted in core
+at `/api/auth/*`, with cookie-based sessions (`textcaster.session_token`,
+host-only, `httpOnly`, `SameSite=Lax`). There is no separate sign-up step to
+start using the app:
+
+- **Visitors act first.** The first write from a fresh browser (e.g.
+  submitting the compose form) transparently mints an anonymous better-auth
+  session and, with it, a local Textcaster identity handled `@guest-XXXXXX`.
+  No form, no page reload.
+- **Register to keep it.** Signing up while holding a guest session
+  re-points that same identity at the new account — same handle, same
+  posts, same follows — rather than creating a second one. Log in as an
+  *existing* different account instead, and the guest identity is abandoned
+  (its posts stay put; nothing is merged).
+- **Idle guests are swept.** An anonymous identity untouched for
+  `TEXTCASTER_ANON_TTL_DAYS` (and abandoned guests from the above) are
+  deleted, cascading their posts and follows, by an hourly background sweep.
+- **Adding a feed requires registration.** `POST /users` (add a remote
+  user/feed) and OPML import (`POST /users/:handle/follows/opml`) 403 for
+  anonymous sessions — each new feed is a standing polling cost, so only
+  registered accounts can create them. Posting, replying, and following
+  existing users work anonymously.
 
 ## Feeds & push
 
@@ -202,12 +229,12 @@ curl http://localhost:8787/timeline?author=alice
 curl http://localhost:8787/timeline?followed_by=alice
 ```
 
-OPML routes (import requires bearer auth; export is public):
+OPML routes (import requires a registered session; export is public):
 
 | Method | Route | Notes |
 |---|---|---|
 | `GET` | `/users/<handle>/following.opml` | Export followed feeds as OPML. Public (no auth). |
-| `POST` | `/users/<handle>/follows/opml` | Import OPML. Bearer auth required. Core accepts up to 1 MB, flattens nested outlines, skips duplicates and non-`http(s)` feed URLs. |
+| `POST` | `/users/<handle>/follows/opml` | Import OPML. Registered session required (403 for anonymous — each imported feed is a new one). Core accepts up to 1 MB, flattens nested outlines, skips duplicates and non-`http(s)` feed URLs. |
 
 **Web import upload size:** the browser import form POSTs through the
 SvelteKit server, whose body limit (`BODY_SIZE_LIMIT`, ~512 KB by default
@@ -292,21 +319,46 @@ Read the timeline (no auth required):
 curl http://localhost:8787/timeline
 ```
 
-Create a local post (auth required — both `POST /users` and `POST /posts`
-require `Authorization: Bearer <token>`, using core's `TEXTCASTER_TOKEN`):
+Posting requires a session — without one, `POST /posts` 401s:
+
+```bash
+curl -i -X POST http://localhost:8787/posts \
+  -H "Content-Type: application/json" \
+  -d '{"content":"hello, textcaster"}'
+```
+
+Mint an anonymous session (the same one a fresh browser visitor gets on
+their first action) — note the `Origin` header, required or better-auth
+403s — and save the cookie:
+
+```bash
+curl -i -X POST http://localhost:8787/api/auth/sign-in/anonymous \
+  -H "Origin: http://localhost:5173" -c cookies.txt
+```
+
+Post under that session, then read the identity it minted:
 
 ```bash
 curl -X POST http://localhost:8787/posts \
-  -H "Authorization: Bearer $TEXTCASTER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"handle":"alice","displayName":"Alice","content":"hello, textcaster"}'
+  -b cookies.txt -H "Content-Type: application/json" \
+  -d '{"content":"hello, textcaster"}'
+
+curl http://localhost:8787/me -b cookies.txt
 ```
 
-Add a remote user (also requires the bearer token):
+Add a remote user (a new feed) — anonymous sessions are 403'd, since each
+feed is a standing polling cost; the ops bearer token still works here (its
+one remaining job, alongside a registered session):
 
 ```bash
+curl -i -X POST http://localhost:8787/users \
+  -b cookies.txt -H "Content-Type: application/json" \
+  -d '{"handle":"bob-remote","displayName":"Bob","feedUrl":"https://example.com/feed.xml"}'
+# → 403
+
 curl -X POST http://localhost:8787/users \
   -H "Authorization: Bearer $TEXTCASTER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"handle":"bob-remote","displayName":"Bob","feedUrl":"https://example.com/feed.xml"}'
+# → 201
 ```

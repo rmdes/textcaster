@@ -84,6 +84,10 @@ test('ensureSessionFetch mints an anonymous session once and threads the minted 
 	expect(f).toHaveBeenCalledTimes(2)
 	const mintInit = f.mock.calls[0][1] as RequestInit
 	expect(new Headers(mintInit.headers).get('origin')).toBe('http://localhost:5173')
+	// better-auth 415s a bodyless POST through core's Hono mount (probed) —
+	// content-type + a body are required even for this no-input endpoint.
+	expect(new Headers(mintInit.headers).get('content-type')).toBe('application/json')
+	expect(mintInit.body).toBe('{}')
 	const actInit = f.mock.calls[1][1] as RequestInit
 	expect(new Headers(actInit.headers).get('cookie')).toBe('textcaster.session_token=minted')
 	expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 'minted', {
