@@ -8,6 +8,7 @@ import type { FeedContext } from '../src/domain/feed.ts'
 import type { Post } from '../src/domain/types.ts'
 import { renderFirehoseRss, injectSourceAccounts, injectSourceComments } from '../src/domain/feed.ts'
 import { generateRssFeed } from 'feedsmith'
+import { ingestItems } from '../src/domain/ingest.ts'
 import { makeAuth } from './auth-helper.ts'
 
 const CTX: FeedContext = { publicUrl: 'https://cast.example.com', hubUrl: 'https://cast.example.com/hub', rssCloud: true }
@@ -172,4 +173,54 @@ test('xmlns dedup checks the opening tag, not the whole document (body text may 
   expect(rssOpenTag).toContain('xmlns:source="http://source.scripting.com/"')
   // And source:comments must be present
   expect(xml).toContain('<source:comments count="3"')
+})
+
+// The firehose route needs posts with minted permalink urls, so these two
+// tests build the app with createService's publicUrl arg set — makeApp()
+// above intentionally omits it (existing tests assert on url-less output).
+async function makeFirehoseApp() {
+  const repo = await createSqliteRepository(':memory:')
+  const bus = createEventBus()
+  const service = createService(repo, bus, CTX.publicUrl)
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), users: repo, feeds: CTX })
+  return { repo, service, app }
+}
+
+test('GET /users/rss.xml serves the firehose; a user literally named rss keeps their feed', async () => {
+  const { service, app } = await makeFirehoseApp()
+  await seedAlice(service)
+  const res = await app.request('/users/rss.xml')
+  expect(res.status).toBe(200)
+  expect(res.headers.get('content-type')).toContain('application/rss+xml')
+  const xml = await res.text()
+  expect(xml).toContain(': all posts</title>')
+  expect(xml).toContain('<source url=')
+  expect(xml).toContain('<source:account ')
+  // non-collision: a local user named "rss" still resolves per-user
+  await service.createLocalPostAs('rss', 'Rss The User', 'a post by the user named rss')
+  const perUser = await app.request('/users/rss/feed.xml')
+  expect(perUser.status).toBe(200)
+  expect(await perUser.text()).not.toContain(': all posts</title>')
+})
+
+test('ROUND TRIP: our own ingest consumes the firehose with full attribution and threading', async () => {
+  const { service, app } = await makeFirehoseApp()
+  const root = await service.createLocalPostAs('alice', 'Alice', 'root post text')
+  await service.createLocalPostAs('bob', 'Bob', 'reply text', root)
+  const xml = await (await app.request('/users/rss.xml')).text()
+  const { items } = await parseFeedWithMeta(xml)
+  const freshRepo = await createSqliteRepository(':memory:')
+  const sub = await freshRepo.createRemoteUser({ handle: 'tc-firehose', displayName: 'TC', feedUrl: 'https://tc.example/users/rss.xml' })
+  await ingestItems(freshRepo, createEventBus(), sub, items)
+  const timeline = await freshRepo.getTimeline(50)
+  const rootEntry = timeline.find((e) => e.content.includes('root post text'))!
+  const replyEntry = timeline.find((e) => e.content.includes('reply text'))!
+  // attribution: item author, not the subscription
+  expect(rootEntry.sourceName).toBe('Alice')
+  expect(rootEntry.sourceFeedUrl).toBe(`${CTX.publicUrl}/users/alice/feed.xml`)
+  expect(replyEntry.sourceName).toBe('Bob')
+  // threading: the reply resolved against the root's permalink (adoption
+  // covers newest-first order: the reply arrives before its parent)
+  expect(replyEntry.inReplyToPostId).toBe(rootEntry.id)
+  expect(replyEntry.threadRootId).toBe(rootEntry.id)
 })

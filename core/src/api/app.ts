@@ -6,7 +6,7 @@ import { sessionAuth, registeredOnly, sessionOrToken } from './auth.ts'
 import type { UserDirectory } from './auth.ts'
 import { parseCursor, formatCursor } from './cursor.ts'
 import { DomainError, HandleTakenError } from '../domain/types.ts'
-import { renderRssFeed, renderJsonFeed, renderCommentsFeed, injectSourceComments } from '../domain/feed.ts'
+import { renderRssFeed, renderJsonFeed, renderCommentsFeed, injectSourceComments, renderFirehoseRss, injectSourceAccounts } from '../domain/feed.ts'
 import { buildFollowingOpml, importFollowingOpml } from '../domain/opml.ts'
 import type { FeedContext } from '../domain/feed.ts'
 import type { Service } from '../domain/service.ts'
@@ -202,6 +202,22 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     }
     return { user }
   }
+
+  // Static-before-param: Hono matches this ahead of /users/:handle/feed.xml
+  // regardless of declaration order, but reading top-to-bottom should say so.
+  app.get('/users/rss.xml', async (c) => {
+    const entries = await service.getRecentLocalPosts(FEED_LIMIT)
+    let xml = renderFirehoseRss(entries, feeds)
+    if (feeds.publicUrl) {
+      const pub = feeds.publicUrl
+      const host = new URL(pub).host
+      xml = injectSourceAccounts(xml, entries.map((p) => ({ guid: p.guid, service: host, name: p.author.handle })))
+      const counts = await service.countRepliesByPostIds(entries.map((p) => p.id))
+      xml = injectSourceComments(xml, entries.filter((p) => (counts.get(p.id) ?? 0) > 0)
+        .map((p) => ({ guid: p.guid, count: counts.get(p.id)!, feedUrl: `${pub}/post/${p.id}/comments.xml` })))
+    }
+    return c.body(xml, 200, { 'content-type': 'application/rss+xml; charset=utf-8' })
+  })
 
   app.get('/users/:handle/feed.xml', async (c) => {
     const r = await resolveFeedUser(c)
