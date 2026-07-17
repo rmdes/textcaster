@@ -6,15 +6,78 @@ posts, replies, and whole conversations travel as RSS, so following,
 threading, and federation all work over open feeds instead of a proprietary
 API.
 
-Textcaster is built on [Textcasting](https://textcasting.org) and inspired by
-Dave Winer's [rss.chat](https://github.com/scripting/rss.chat). It takes RSS
-/ OPML / JSON Feed / WebSub from that tradition and Micropub / Webmention /
-IndieAuth / microformats2 from the IndieWeb, and unites them in one place.
+Textcaster is built on [Textcasting](https://textcasting.org) and directly
+inspired by Dave Winer's [rss.chat](https://github.com/scripting/rss.chat).
+It uses RSS, OPML, JSON Feed, WebSub, and rssCloud today, and aims to add
+IndieWeb interop (IndieAuth, Micropub, Webmention) next — see the roadmap.
 
-> **Status: the spine is runnable end to end.** Local posts and remote feed
-> items live in one timeline, server-rendered and updating live over SSE. The
-> founding design is in
+> **Status: pre-release, but deep.** Not everything below is polished and no
+> release is cut yet — but the timeline, posting, threading, feeds in and
+> out, real-time federation, rss.chat interop, and accounts all work end to
+> end today. It's at the point where it's worth showing people. The founding
+> design is in
 > [`docs/superpowers/specs/2026-07-15-textcaster-design.md`](docs/superpowers/specs/2026-07-15-textcaster-design.md).
+
+## What works today
+
+**One live timeline.** Local posts and polled-in remote feed items share a
+single server-rendered timeline that updates live over SSE (Server-Sent
+Events). Works with JavaScript off — the live updates are a progressive
+enhancement, not a requirement.
+
+**Rich posting.** A Markdown composer (built on [Carta](https://github.com/BearToCode/carta))
+with syntax highlighting and a live preview. Line breaks, `:shortcode:`
+emoji, GFM tables/strikethrough, and syntax-highlighted code blocks all
+render through one [unified/remark](https://unifiedjs.com/) pipeline shared
+between the editor preview and the published post — so what you preview is
+what readers get. Composing opens in a resizable overlay with drafts that
+survive a reload. Every post is sanitized server-side before it ever reaches
+a browser.
+
+**Real conversations over plain RSS.** Replies are posts. They thread inline
+under a post (an outliner-style disclosure wedge) and on a dedicated
+conversation page. Threads are reconstructed from feeds using the RSS
+`source:` namespace (`source:inReplyTo`) plus RFC 4685 (`thr:in-reply-to`),
+with resolve-once matching, honest orphaning when a reference can't be
+resolved, and adoption that heals out-of-order arrival — a reply that shows
+up before its parent snaps into place when the parent lands.
+
+**Feeds in.** Subscribe to any RSS, Atom, or JSON Feed. Import an OPML
+blogroll. Feed discovery resolves an HTML page to its feed (`<link
+rel=alternate>`) and ingests h-feed / microformats2 pages directly. Every
+outbound fetch is SSRF-guarded with per-hop redirect re-validation.
+
+**Feeds out.** Each user gets an RSS and a JSON feed; the instance also
+publishes an all-users firehose at `/users/rss.xml` (Dave's rss.chat
+convention). Local posts carry the Textcasting dual contract — rendered,
+sanitized HTML for readers *and* the raw `source:markdown` beside it — plus
+permalink `guid`s, `source:` attribution, and per-conversation
+`source:comments` feeds. New posts are delivered in real time to subscribers
+over both WebSub (fat pings) and rssCloud, and Textcaster receives the same
+way (push-in), so federation is live, not just polled.
+
+**Interop with rss.chat.** Textcaster consumes Dave Winer's rss.chat firehose
+with correct per-item author attribution and full threading, and emits the
+same `source:` namespace so his side can round-trip ours — a conversation can
+federate A→B→A over nothing but RSS. A "Connected instances" panel advertises
+which Textcasting peers an instance actually threads and interops with
+(detected from feeds that carry `source:markdown`).
+
+**Accounts.** Browse and post as an anonymous guest first (you get a
+`@guest-xxxxx` handle on first write); upgrade to a permanent email + password
+account with hard email verification; or sign in passwordlessly with a
+magic link. Password reset included. Sessions and identity are handled by
+[better-auth](https://www.better-auth.com/).
+
+**Self-hosting.** A one-command Docker dev stack, and a production stack that
+any VPS owner can run behind Caddy with automatic HTTPS (below).
+
+## Roadmap
+
+Not built yet, in rough order: IndieAuth sign-in and Micropub posting-in;
+Webmention; timeline tabs (personal / local / remote) and OPML-category
+filtering of sources; media/enclosures and avatar harvesting from source
+feeds. Trackable in [`docs/superpowers/specs/`](docs/superpowers/specs/).
 
 ## Develop
 
@@ -56,24 +119,33 @@ server, e.g. `smtps://user:pass@smtp.example.com:465`, and redeploy.
 
 ## Architecture
 
-`core` is a headless Hono/Node service backed by SQLite (`better-auth` for
-identity/sessions) that serves feeds, federation endpoints (WebSub, rssCloud),
-and the timeline API; `web` is the SvelteKit app — the UI, and the only
-thing browsers ever talk to, proxying auth and streaming to core server-side.
-In production, Caddy sits in front of both: it terminates HTTPS and routes
-core's small **public** surface (feed/OPML XML, federation callbacks)
-directly to `core`, sending everything else — including all auth — to `web`,
-while `core` itself publishes no host ports and is reachable only through
-that front door.
+Two workspaces in one repo:
+
+- **`core`** — a headless Hono/Node service backed by SQLite, with
+  `better-auth` for identity/sessions. It owns feeds, federation endpoints
+  (WebSub, rssCloud), the ingest/threading logic, and the timeline API. It is
+  never browser-facing.
+- **`web`** — the SvelteKit app: the entire UI, and the only thing browsers
+  talk to. It renders the timeline, sanitizes and serves content, and proxies
+  auth + the SSE stream to core server-side.
+
+In production, Caddy is the front door: it terminates HTTPS and routes core's
+small **public** surface (feed/OPML XML, per-conversation comment feeds,
+federation callbacks) directly to `core`, while everything else — the whole
+UI and all of `/api/auth/*` — goes to `web`. `core` publishes no host ports
+and is reachable only through that split. (Auth deliberately goes through
+`web`, not straight to core: emailed verify/magic-link clicks are plain GET
+navigations with no `Origin` header, and web's proxy supplies the `Origin`
+that the auth layer requires.)
 
 ## Docs
 
 - [`docs/superpowers/specs/`](docs/superpowers/specs/) — design documents for
-  every major piece (spine, feeds, following, threading, auth, Docker, email,
-  and more).
+  every major piece (spine, feeds, following, threading, rich content, the
+  markdown composer, the firehose, auth, email, and Docker).
 - [`docs/superpowers/documentation/RUNNING.md`](docs/superpowers/documentation/RUNNING.md) —
-  running Textcaster without Docker (npm workspaces directly), full env var
-  reference, and identity/session/email details.
+  running Textcaster without Docker (npm workspaces directly), the full env
+  var reference, and identity/session/email details.
 
 ## Credits and lineage
 

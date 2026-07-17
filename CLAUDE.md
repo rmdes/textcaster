@@ -1,5 +1,62 @@
 # Textcaster — project conventions
 
+A feeds-native social timeline: local posts and remote feed items are equal
+citizens; posts/replies/conversations travel as RSS. Full picture in
+`README.md`; founding design in `docs/superpowers/specs/2026-07-15-textcaster-design.md`.
+
+## Architecture
+
+Two npm workspaces in one repo:
+
+- **`core/`** — headless Hono/Node service, SQLite (better-sqlite3 + Kysely),
+  `better-auth` for identity. Owns feeds, federation (WebSub/rssCloud),
+  ingest/threading, the timeline API. **Never browser-facing.** Runs on Node
+  22+ **native type stripping** — no build step, and therefore **no TypeScript
+  parameter properties** in `core/src` (constructors assign fields plainly).
+- **`web/`** — SvelteKit (Svelte 5 runes, `adapter-node`). The whole UI and
+  the only thing browsers talk to; proxies auth + the SSE stream to core
+  server-side via `CORE_API_URL`.
+
+Load-bearing invariants — don't break these without understanding why:
+
+- **The sanitizer is the XSS gate.** Display HTML is produced by ONE path and
+  sanitized server-side. `core/src/domain/markdown.ts` and
+  `web/src/lib/server/render.ts` are hand-duplicated **twins** (same unified
+  pipeline + sanitize-html config); a drift-canary test in both suites fails
+  if they diverge. Change both or neither. `{@html}` appears in exactly one
+  web component (`PostBody.svelte`).
+- **`/api/auth/*` is served by web, never core directly.** Emailed
+  verify/magic-link clicks are native GETs with no `Origin`; better-auth 403s
+  those, so `web/src/routes/api/auth/[...path]/+server.ts` injects `Origin`
+  and relays cookies. Keep it.
+- **Feeds/federation are the ONLY core paths exposed publicly** (via Caddy in
+  prod); the rest of core stays internal. See `Caddyfile`.
+
+## Working here
+
+- **Dev runs in Docker:** `docker compose up` (core + web + Mailpit, live
+  reload). This is the dev environment — not host `npm run dev`. Details in
+  `README.md`. `docker/`, `compose.yaml`, `compose.prod.yaml`, `Caddyfile`.
+- **Read the installed source before using an API** (better-auth, carta-md,
+  feedsmith, Caddy). Probe against the real version; never from memory. Many
+  bugs here came from an assumed API shape.
+- **Git:** shared checkout — a parallel session commits on `main` too, so
+  **never `git add -A`**; stage explicit paths. End commit messages with
+  `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`. No remote yet
+  (push pending repo creation — ask first).
+
+## How work gets done here
+
+Milestone flow: **brainstorm → spec → plan → subagent-driven execution.**
+Specs (`superpowers:brainstorming`) and plans (`superpowers:writing-plans`)
+land in `docs/superpowers/`; a **parallel Claude session reviews** specs and
+plans, dropping findings into `docs/superpowers/reviews/` — fold them in as
+numbered revs before proceeding. Execute with
+`superpowers:subagent-driven-development` (fresh implementer per task, a
+review after each, a whole-branch review on the most capable model at the
+end). Bug fixes go through `superpowers:systematic-debugging` (root cause
+before fix).
+
 ## Ponytail workflow
 
 Ponytail mode (lazy/minimal, plugin `ponytail`) is auto-active every session;
