@@ -26,7 +26,14 @@
 	"dependencies": {
 		"carta-md": "^4.11.2",
 		"dompurify": "^3.4.12",
-		"marked": "^18.0.6",
-		"sanitize-html": "^2.17.6"
+		"rehype-highlight": "7.0.2",
+		"rehype-stringify": "10.0.1",
+		"remark-breaks": "4.0.0",
+		"remark-emoji": "5.0.2",
+		"remark-gfm": "4.0.1",
+		"remark-parse": "11.0.0",
+		"remark-rehype": "11.1.2",
+		"sanitize-html": "^2.17.6",
+		"unified": "11.0.5"
 	}
 }

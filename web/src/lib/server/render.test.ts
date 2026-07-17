@@ -55,3 +55,68 @@ test('preview sanitizer forbids what the server strips (parity pin)', () => {
 	expect(PREVIEW_SANITIZE_OPTS.FORBID_TAGS).toContain('input')
 	expect(PREVIEW_SANITIZE_OPTS.FORBID_ATTR).toContain('align')
 })
+
+// ── unified pipeline milestone ──────────────────────────────────────────
+// CANONICAL DRIFT-CANARY FIXTURE: this exact input and this exact expected
+// output are duplicated byte-identically in core/test/rich-content.test.ts.
+// If you change either side, change both — that is the twin contract.
+const CANONICAL_INPUT = [
+	'line one',
+	'line two :rocket:',
+	'',
+	'~~gone~~ and **kept**',
+	'',
+	'| a | b |',
+	'| - | - |',
+	'| 1 | 2 |',
+	'',
+	'```js',
+	'const x = 1',
+	'```',
+	'',
+	'- [ ] task',
+	'',
+	'<script>alert(1)</script>',
+	'',
+	'[link](javascript:alert(1)) [ok](https://example.com)',
+].join('\n')
+
+const CANONICAL_OUTPUT =
+	'<p>line one<br />\nline two 🚀</p>\n<p><del>gone</del> and <strong>kept</strong></p>\n<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n<pre><code class="hljs language-js"><span class="hljs-keyword">const</span> x = <span class="hljs-number">1</span>\n</code></pre>\n<ul>\n<li> task</li>\n</ul>\n<p><a rel="noreferrer">link</a> <a href="https://example.com" rel="noreferrer">ok</a></p>'
+
+test('canonical fixture renders byte-identically (twin: core rich-content.test.ts)', () => {
+	expect(renderPostHtml({ content: CANONICAL_INPUT, source: 'local' })).toBe(CANONICAL_OUTPUT)
+})
+
+test('single newline becomes <br> (remark-breaks)', () => {
+	expect(renderPostHtml({ content: 'a\nb', source: 'local' })).toBe('<p>a<br />\nb</p>')
+})
+
+test('emoji shortcode renders as bare unicode text, never a span wrapper', () => {
+	const html = renderPostHtml({ content: 'hi :tada:', source: 'local' })
+	expect(html).toBe('<p>hi 🎉</p>')
+	expect(html).not.toContain('<span')
+})
+
+test('hljs classes survive on code/span only; arbitrary classes die', () => {
+	const html = renderPostHtml({ content: '```js\nconst x = 1\n```', source: 'local' })
+	expect(html).toContain('<code class="hljs language-js">')
+	expect(html).toContain('<span class="hljs-keyword">const</span>')
+})
+
+test('unlabeled fence gets no hljs markup (detect stays off)', () => {
+	const html = renderPostHtml({ content: '```\nplain\n```', source: 'local' })
+	expect(html).toBe('<pre><code>plain\n</code></pre>')
+})
+
+test('raw inline HTML in markdown dies at the parser (allowDangerousHtml never set)', () => {
+	const html = renderPostHtml({ content: 'before\n\n<script>alert(1)</script>\n\nafter', source: 'local' })
+	expect(html).not.toContain('script')
+	expect(html).not.toContain('alert(1)')
+})
+
+test('hljs sub-scope classes strip to the hljs- part (expected, do not fix)', () => {
+	const html = renderPostHtml({ content: '```js\nfunction f() {}\n```', source: 'local' })
+	expect(html).toContain('class="hljs-title"')
+	expect(html).not.toContain('function_')
+})
