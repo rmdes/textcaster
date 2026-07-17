@@ -4,6 +4,7 @@ import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
 import { ingestRemoteUser } from '../src/domain/ingest.ts'
+import { makeAuth } from './auth-helper.ts'
 
 // The primary feedUrl fetch is now SSRF-guarded (checkCallbackUrl); default real
 // DNS won't resolve the fake a.example host used across this bridge, so inject
@@ -15,7 +16,7 @@ test('the loop closes: instance B ingests instance A user as a remote over plain
   const repoA = await createSqliteRepository(':memory:')
   const busA = createEventBus()
   const serviceA = createService(repoA, busA)
-  const appA = createApp({ service: serviceA, bus: busA, token: 'a', feeds: { publicUrl: 'http://a.example', hubUrl: null, rssCloud: false } })
+  const appA = createApp({ service: serviceA, bus: busA, token: 'a', auth: makeAuth(repoA), feeds: { publicUrl: 'http://a.example', hubUrl: null, rssCloud: false } })
   await serviceA.createLocalPostAs('alice', 'Alice', 'hello from instance A — ünïcode ✓')
   await serviceA.createLocalPostAs('alice', 'Alice', 'second transmission')
 

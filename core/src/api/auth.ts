@@ -1,5 +1,15 @@
-import { timingSafeEqual } from 'node:crypto'
+import { timingSafeEqual, randomUUID } from 'node:crypto'
 import type { MiddlewareHandler } from 'hono'
+import type { Auth } from '../auth.ts'
+import type { User } from '../domain/types.ts'
+import { HandleTakenError } from '../domain/types.ts'
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    coreUser: User
+    sessionIsAnonymous: boolean
+  }
+}
 
 export function bearerAuth(token: string): MiddlewareHandler {
   const expected = Buffer.from(`Bearer ${token}`)
@@ -9,5 +19,60 @@ export function bearerAuth(token: string): MiddlewareHandler {
       return c.json({ error: 'unauthorized' }, 401)
     }
     await next()
+  }
+}
+
+export interface UserDirectory {
+  getUserByAuthUserId(authUserId: string): Promise<User | undefined>
+  createLocalUser(u: { handle: string; displayName: string; authUserId?: string }): Promise<User>
+}
+
+// Lazy mint (spec P-1 + direct-registration coverage): the core identity is
+// created at first session resolution, whoever the auth user is. One
+// mechanism covers anonymous first-write, direct registration, and recovery
+// after a failed onLinkAccount re-point.
+export async function ensureCoreUser(users: UserDirectory, authUserId: string): Promise<User> {
+  const existing = await users.getUserByAuthUserId(authUserId)
+  if (existing) return existing
+  for (let i = 0; i < 50; i++) {
+    const handle = `guest-${randomUUID().replace(/-/g, '').slice(0, 6)}`
+    try {
+      return await users.createLocalUser({ handle, displayName: handle, authUserId })
+    } catch (err) {
+      if (!(err instanceof HandleTakenError)) throw err
+      // UNIQUE(auth_user_id) also maps to HandleTakenError: a concurrent
+      // request may have minted for this same session — take theirs.
+      const raced = await users.getUserByAuthUserId(authUserId)
+      if (raced) return raced
+    }
+  }
+  throw new Error('could not allocate a guest handle')
+}
+
+export function sessionAuth(auth: Auth, users: UserDirectory): MiddlewareHandler {
+  return async (c, next) => {
+    const session = await auth.api.getSession({ headers: c.req.raw.headers })
+    if (!session) return c.json({ error: 'authentication required' }, 401)
+    c.set('coreUser', await ensureCoreUser(users, session.user.id))
+    c.set('sessionIsAnonymous', (session.user as { isAnonymous?: boolean | null }).isAnonymous === true)
+    await next()
+  }
+}
+
+export function registeredOnly(): MiddlewareHandler {
+  return async (c, next) => {
+    if (c.get('sessionIsAnonymous')) return c.json({ error: 'registration required' }, 403)
+    await next()
+  }
+}
+
+// POST /users only: ops bearer token OR a registered session.
+export function sessionOrToken(token: string, auth: Auth, users: UserDirectory): MiddlewareHandler {
+  const viaSession = sessionAuth(auth, users)
+  const mustBeRegistered = registeredOnly()
+  return async (c, next) => {
+    const header = c.req.header('authorization')
+    if (header !== undefined) return bearerAuth(token)(c, next)
+    return viaSession(c, async () => { await mustBeRegistered(c, next) })
   }
 }

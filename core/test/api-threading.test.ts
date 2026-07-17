@@ -4,12 +4,13 @@ import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
 import type { FeedContext } from '../src/domain/feed.ts'
+import { makeAuth } from './auth-helper.ts'
 
 async function makeApp(feeds?: FeedContext) {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', feeds })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), feeds })
   return { app, repo, service }
 }
 const auth = { authorization: 'Bearer secret', 'content-type': 'application/json' }

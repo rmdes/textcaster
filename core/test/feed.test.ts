@@ -5,6 +5,7 @@ import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
 import { parseFeedWithMeta } from '../src/domain/ingest.ts'
 import type { FeedContext } from '../src/domain/feed.ts'
+import { makeAuth } from './auth-helper.ts'
 
 const CTX: FeedContext = { publicUrl: 'https://cast.example.com', hubUrl: 'https://cast.example.com/hub', rssCloud: true }
 
@@ -12,7 +13,7 @@ async function makeApp(feeds?: FeedContext) {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', feeds })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), feeds })
   return { repo, service, app }
 }
 

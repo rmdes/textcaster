@@ -4,6 +4,7 @@ import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
 import { ingestRemoteUser } from '../src/domain/ingest.ts'
+import { makeAuth } from './auth-helper.ts'
 
 // The primary feedUrl fetch is SSRF-guarded (checkCallbackUrl); default real DNS
 // won't resolve the fake .example/.ex test hosts used across this bridge, so
@@ -14,7 +15,7 @@ async function instance(publicUrl: string) {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', feeds: { publicUrl, hubUrl: null, rssCloud: false } })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), feeds: { publicUrl, hubUrl: null, rssCloud: false } })
   // fetchFn that serves this instance's own routes for its public origin
   const serve = async (url: string | URL | Request) => {
     const u = new URL(String(url))

@@ -10,6 +10,7 @@ import { buildFollowingOpml, importFollowingOpml } from '../domain/opml.ts'
 import type { FeedContext } from '../domain/feed.ts'
 import type { Service } from '../domain/service.ts'
 import type { EventBus } from '../domain/bus.ts'
+import type { Auth } from '../auth.ts'
 
 function isValidFeedUrl(feedUrl: unknown): feedUrl is string {
   if (typeof feedUrl !== 'string') return false
@@ -51,7 +52,7 @@ const MAX_FAT_PING_BYTES = 5 * 1024 * 1024
 const MAX_FORM_BYTES = 64 * 1024
 const rejectOversized = (c: Context) => c.text('payload too large', 413)
 
-export function createApp(deps: { service: Service; bus: EventBus; token: string; feeds?: FeedContext; pushApi?: PushApi; pushInApi?: PushInApi }): Hono {
+export function createApp(deps: { service: Service; bus: EventBus; token: string; auth: Auth; feeds?: FeedContext; pushApi?: PushApi; pushInApi?: PushInApi }): Hono {
   const { service, bus, token } = deps
   const feeds: FeedContext = deps.feeds ?? { publicUrl: null, hubUrl: null, rssCloud: false }
   const app = new Hono()
@@ -63,6 +64,8 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
   })
 
   app.get('/health', (c) => c.json({ ok: true }))
+
+  app.on(['GET', 'POST'], '/api/auth/*', (c) => deps.auth.handler(c.req.raw))
 
   app.post('/users', bearerAuth(token), async (c) => {
     const body = await readJsonBody(c)

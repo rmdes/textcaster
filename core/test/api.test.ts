@@ -3,12 +3,13 @@ import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
+import { makeAuth } from './auth-helper.ts'
 
 async function makeApp() {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  return createApp({ service, bus, token: 'secret' })
+  return createApp({ service, bus, token: 'secret', auth: makeAuth(repo) })
 }
 
 test('POST /posts requires the bearer token', async () => {
@@ -147,7 +148,7 @@ test('fat-ping route enforces the 5MB body cap before delivery', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: deliver } })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: deliver } })
   // content-length pre-check path
   const lying = await app.request('/websub/callback/tok', { method: 'POST', headers: { 'content-length': String(10 * 1024 * 1024) }, body: 'small' })
   expect(lying.status).toBe(413)
@@ -169,7 +170,7 @@ test('rsscloud notify route enforces the 64KB form body cap', async () => {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret', pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: async () => 202, rsscloudPing: ping } })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo), pushInApi: { websubVerify: async () => ({ status: 404, body: '' }), websubDeliver: async () => 202, rsscloudPing: ping } })
   const big = new URLSearchParams({ url: 'x'.repeat(64 * 1024 + 1) })
   const res = await app.request('/rsscloud/notify', { method: 'POST', body: big })
   expect(res.status).toBe(413)

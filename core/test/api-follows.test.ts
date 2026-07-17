@@ -3,12 +3,13 @@ import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
 import { createApp } from '../src/api/app.ts'
+import { makeAuth } from './auth-helper.ts'
 
 async function makeApp() {
   const repo = await createSqliteRepository(':memory:')
   const bus = createEventBus()
   const service = createService(repo, bus)
-  const app = createApp({ service, bus, token: 'secret' })
+  const app = createApp({ service, bus, token: 'secret', auth: makeAuth(repo) })
   return { app, repo, service }
 }
 const auth = { authorization: 'Bearer secret', 'content-type': 'application/json' }

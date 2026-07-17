@@ -6,6 +6,7 @@ import { createSqliteRepository } from './storage/sqlite.ts'
 import { createEventBus } from './domain/bus.ts'
 import { createService } from './domain/service.ts'
 import { createApp } from './api/app.ts'
+import { createAuth } from './auth.ts'
 import { hubLinkUrl } from './domain/feed.ts'
 import { createPush, handleWebSubRequest, handleRssCloudRequest } from './domain/push.ts'
 import { createPushIn, runPollCycle, pushInEffective } from './domain/push-in.ts'
@@ -16,6 +17,7 @@ if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive:
 const repo = await createSqliteRepository(config.dbPath)
 const bus = createEventBus()
 const service = createService(repo, bus)
+const auth = createAuth({ sqlite: repo.raw, users: repo, secret: config.authSecret, webOrigin: config.webOrigin, anonTtlDays: config.anonTtlDays })
 const push = createPush({ repo, config })
 const pushIn = createPushIn({ repo, config })
 if (config.pushIn && !config.publicUrl) console.log('push-in inactive: no public URL')
@@ -23,6 +25,7 @@ const app = createApp({
   service,
   bus,
   token: config.token,
+  auth,
   feeds: { publicUrl: config.publicUrl, hubUrl: hubLinkUrl(config.websub, config.publicUrl), rssCloud: config.rssCloud },
   pushApi:
     config.websub.mode === 'self' || config.rssCloud

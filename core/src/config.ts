@@ -9,6 +9,9 @@ export interface Config {
   websub: WebSubMode
   rssCloud: boolean
   pushIn: boolean
+  authSecret: string
+  webOrigin: string
+  anonTtlDays: number
 }
 
 function positiveInt(name: string, raw: string): number {
@@ -53,6 +56,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('TEXTCASTER_PUBLIC_URL is required when TEXTCASTER_WEBSUB or TEXTCASTER_RSSCLOUD is enabled')
   }
 
+  const authSecret = env.TEXTCASTER_AUTH_SECRET
+  if (!authSecret) throw new Error('TEXTCASTER_AUTH_SECRET is required')
+  const webOrigin = httpUrl('TEXTCASTER_WEB_ORIGIN', env.TEXTCASTER_WEB_ORIGIN ?? 'http://localhost:5173').replace(/\/+$/, '')
+  const anonTtlDays = positiveInt('TEXTCASTER_ANON_TTL_DAYS', env.TEXTCASTER_ANON_TTL_DAYS ?? '7')
+
   return {
     dbPath: env.TEXTCASTER_DB ?? './data/textcaster.db',
     token,
@@ -62,5 +70,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     websub,
     rssCloud,
     pushIn,
+    authSecret,
+    webOrigin,
+    anonTtlDays,
   }
 }
