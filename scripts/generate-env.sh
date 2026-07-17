@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [ "${1:-}" = "--dev" ]; then
+	umask 077 # .env holds secrets — owner-only
 	cat > .env <<EOF
 # Dev .env (generated). Not for production.
 TEXTCASTER_DOMAIN=localhost
@@ -19,7 +20,10 @@ fi
 
 read -rp "Domain (e.g. textcaster.example.com): " DOMAIN
 read -rsp "Mailpit /mail password: " MP_PW; echo
-HASH="$(docker run --rm caddy:2-alpine caddy hash-password --plaintext "$MP_PW")"
+# Pipe the password via stdin, NOT --plaintext as an argv: a CLI arg is visible
+# in `ps`/audit logs to any local user, defeating the silent read above.
+HASH="$(printf '%s\n' "$MP_PW" | docker run --rm -i caddy:2-alpine caddy hash-password)"
+umask 077 # .env holds AUTH_SECRET/TOKEN/hash — owner-only
 cat > .env <<EOF
 TEXTCASTER_DOMAIN=$DOMAIN
 TEXTCASTER_AUTH_SECRET=$(openssl rand -hex 32)
@@ -27,4 +31,4 @@ TEXTCASTER_TOKEN=$(openssl rand -hex 32)
 MAILPIT_USER=mail
 MAILPIT_PASSWORD_HASH=$HASH
 EOF
-echo "Wrote .env. Review it, then: docker compose -f compose.prod.yaml up -d --build"
+echo "Wrote .env (chmod 600). Review it, then: docker compose -f compose.prod.yaml up -d --build"

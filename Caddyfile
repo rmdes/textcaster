@@ -14,8 +14,12 @@
 	# web app's /api/auth proxy (injects Origin, relays Set-Cookie + 302) via
 	# the catch-all below — the same path dev takes.
 	# `path` (not path_regexp): Caddy allows only ONE path_regexp per named
-	# matcher, and path globs are start-anchored anyway, so `/x/users/a/feed.xml`
-	# won't match. Handles have no slash; a stray extra segment just 404s at core.
+	# matcher, and path globs are start-anchored and single-segment (`*` doesn't
+	# cross `/`), so `/x/users/a/feed.xml` and `/users/a/b/feed.xml` both fall
+	# through to web — exactly the old regex surface. One semantic difference:
+	# `path` is case-INSENSITIVE (regex was case-sensitive), so `/USERS/a/FEED.XML`
+	# also reaches core — harmless, it's the same public feed handler (core 404s
+	# a case-mismatched handle anyway).
 	@core {
 		path /users/rss.xml
 		path /users/*/feed.xml /users/*/feed.json
