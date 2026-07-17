@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Generate .env for Textcaster. Prod (default) fills domain + strong secrets +
+# the Mailpit bcrypt hash; --dev writes a localhost dev .env (weak, push off).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ "${1:-}" = "--dev" ]; then
+	cat > .env <<EOF
+# Dev .env (generated). Not for production.
+TEXTCASTER_DOMAIN=localhost
+TEXTCASTER_AUTH_SECRET=$(openssl rand -hex 32)
+TEXTCASTER_TOKEN=dev-token
+MAILPIT_USER=mail
+MAILPIT_PASSWORD_HASH=
+EOF
+	echo "Wrote dev .env (use with: docker compose up)."
+	exit 0
+fi
+
+read -rp "Domain (e.g. textcaster.example.com): " DOMAIN
+read -rsp "Mailpit /mail password: " MP_PW; echo
+HASH="$(docker run --rm caddy:2-alpine caddy hash-password --plaintext "$MP_PW")"
+cat > .env <<EOF
+TEXTCASTER_DOMAIN=$DOMAIN
+TEXTCASTER_AUTH_SECRET=$(openssl rand -hex 32)
+TEXTCASTER_TOKEN=$(openssl rand -hex 32)
+MAILPIT_USER=mail
+MAILPIT_PASSWORD_HASH=$HASH
+EOF
+echo "Wrote .env. Review it, then: docker compose -f compose.prod.yaml up -d --build"

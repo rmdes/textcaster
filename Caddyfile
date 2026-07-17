@@ -1,0 +1,33 @@
+{$TEXTCASTER_DOMAIN} {
+	# Mailpit UI — MUST be protected: it shows verify/magic-link emails, so
+	# anyone who could read /mail could sign in as any user.
+	handle /mail* {
+		basic_auth {
+			{$MAILPIT_USER} {$MAILPIT_PASSWORD_HASH}
+		}
+		reverse_proxy mailpit:8025
+	}
+
+	# core PUBLIC surface: feeds + federation push-callbacks ONLY.
+	# NOT /api/auth/* — emailed link-clicks are native GETs with no Origin, and
+	# better-auth 403s cookie-bearing requests without one. They go through the
+	# web app's /api/auth proxy (injects Origin, relays Set-Cookie + 302) via
+	# the catch-all below — the same path dev takes.
+	@core {
+		path /users/rss.xml
+		path_regexp ^/users/[^/]+/feed\.(xml|json)$
+		path_regexp ^/users/[^/]+/following\.opml$
+		path_regexp ^/post/[^/]+/comments\.xml$
+		path /websub/callback/*
+		path /rsscloud/notify /rsscloud/pleaseNotify
+		path /hub
+	}
+	handle @core {
+		reverse_proxy core:8787
+	}
+
+	# everything else → the SvelteKit app (UI + /api/auth proxy + /stream etc.)
+	handle {
+		reverse_proxy web:3000
+	}
+}

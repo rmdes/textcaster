@@ -1,0 +1,94 @@
+# Textcaster — PROD stack for VPS self-host. Caddy terminates HTTPS and fronts
+# everything; core publishes NO host ports (backend-only isolation). Federation
+# (WebSub/rssCloud) is ON. Run: docker compose -f compose.prod.yaml up -d --build
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: textcaster-caddy
+    depends_on:
+      web:
+        condition: service_started
+      core:
+        condition: service_healthy
+    environment:
+      TEXTCASTER_DOMAIN: ${TEXTCASTER_DOMAIN:?Set TEXTCASTER_DOMAIN in .env}
+      MAILPIT_USER: ${MAILPIT_USER:-mail}
+      MAILPIT_PASSWORD_HASH: ${MAILPIT_PASSWORD_HASH:?Set MAILPIT_PASSWORD_HASH (run scripts/generate-env.sh)}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    networks: [frontend, backend] # F-2: needs backend to reach core:8787
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: textcaster-web
+    environment:
+      CORE_API_URL: http://core:8787
+      PORT: "3000"
+      ORIGIN: https://${TEXTCASTER_DOMAIN:?Set TEXTCASTER_DOMAIN in .env}
+      ADDRESS_HEADER: X-Forwarded-For # F-3: getClientAddress() behind Caddy
+      XFF_DEPTH: "1"
+    depends_on:
+      core:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    restart: unless-stopped
+    networks: [frontend, backend]
+
+  core:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.core
+    container_name: textcaster-core
+    environment:
+      TEXTCASTER_AUTH_SECRET: ${TEXTCASTER_AUTH_SECRET:?Set TEXTCASTER_AUTH_SECRET (run scripts/generate-env.sh)}
+      TEXTCASTER_TOKEN: ${TEXTCASTER_TOKEN:?Set TEXTCASTER_TOKEN (run scripts/generate-env.sh)}
+      TEXTCASTER_DB: /data/textcaster.db
+      TEXTCASTER_PUBLIC_URL: https://${TEXTCASTER_DOMAIN:?Set TEXTCASTER_DOMAIN in .env}
+      TEXTCASTER_WEB_ORIGIN: https://${TEXTCASTER_DOMAIN}
+      TEXTCASTER_WEBSUB: ${TEXTCASTER_WEBSUB:-self}
+      TEXTCASTER_RSSCLOUD: ${TEXTCASTER_RSSCLOUD:-on}
+      TEXTCASTER_PUSH_IN: ${TEXTCASTER_PUSH_IN:-on}
+      TEXTCASTER_SMTP_URL: ${TEXTCASTER_SMTP_URL:-smtp://mailpit:1025}
+      TEXTCASTER_MAIL_FROM: ${TEXTCASTER_MAIL_FROM:-textcaster@${TEXTCASTER_DOMAIN}}
+    volumes:
+      - core-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8787/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    restart: unless-stopped
+    networks: [backend] # NO published ports — reachable only via Caddy/web
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: textcaster-mailpit
+    environment:
+      MP_WEBROOT: /mail
+    restart: unless-stopped
+    networks: [frontend, backend]
+
+volumes:
+  core-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  frontend:
+  backend:
