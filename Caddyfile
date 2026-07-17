@@ -13,11 +13,14 @@
 	# better-auth 403s cookie-bearing requests without one. They go through the
 	# web app's /api/auth proxy (injects Origin, relays Set-Cookie + 302) via
 	# the catch-all below — the same path dev takes.
+	# `path` (not path_regexp): Caddy allows only ONE path_regexp per named
+	# matcher, and path globs are start-anchored anyway, so `/x/users/a/feed.xml`
+	# won't match. Handles have no slash; a stray extra segment just 404s at core.
 	@core {
 		path /users/rss.xml
-		path_regexp ^/users/[^/]+/feed\.(xml|json)$
-		path_regexp ^/users/[^/]+/following\.opml$
-		path_regexp ^/post/[^/]+/comments\.xml$
+		path /users/*/feed.xml /users/*/feed.json
+		path /users/*/following.opml
+		path /post/*/comments.xml
 		path /websub/callback/*
 		path /rsscloud/notify /rsscloud/pleaseNotify
 		path /hub
