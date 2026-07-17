@@ -12,6 +12,9 @@ export interface Config {
   authSecret: string
   webOrigin: string
   anonTtlDays: number
+  smtpUrl: string | null
+  mailFrom: string
+  mailEnabled: boolean
 }
 
 function positiveInt(name: string, raw: string): number {
@@ -61,6 +64,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const webOrigin = httpUrl('TEXTCASTER_WEB_ORIGIN', env.TEXTCASTER_WEB_ORIGIN ?? 'http://localhost:5173').replace(/\/+$/, '')
   const anonTtlDays = positiveInt('TEXTCASTER_ANON_TTL_DAYS', env.TEXTCASTER_ANON_TTL_DAYS ?? '7')
 
+  const smtpUrl = env.TEXTCASTER_SMTP_URL ?? null
+  // From-address default derives from the public origin's host, else webOrigin's.
+  const mailHost = new URL(publicUrl ?? webOrigin).host
+  const mailFrom = env.TEXTCASTER_MAIL_FROM ?? `textcaster@${mailHost}`
+
   return {
     dbPath: env.TEXTCASTER_DB ?? './data/textcaster.db',
     token,
@@ -73,5 +81,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     authSecret,
     webOrigin,
     anonTtlDays,
+    smtpUrl,
+    mailFrom,
+    mailEnabled: smtpUrl !== null,
   }
 }

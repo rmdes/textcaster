@@ -61,3 +61,14 @@ test('auth env defaults: webOrigin and anonTtlDays', () => {
   expect(c2.webOrigin).toBe('https://tc.example')
   expect(c2.anonTtlDays).toBe(30)
 })
+
+test('mail config: absent SMTP url disables mail; present enables it', () => {
+  const c = loadConfig({ TEXTCASTER_TOKEN: 't', TEXTCASTER_AUTH_SECRET: 's' })
+  expect(c.smtpUrl).toBeNull()
+  expect(c.mailEnabled).toBe(false)
+  expect(c.mailFrom).toMatch(/@/) // has a sane default
+  const c2 = loadConfig({ TEXTCASTER_TOKEN: 't', TEXTCASTER_AUTH_SECRET: 's', TEXTCASTER_SMTP_URL: 'smtp://localhost:1025', TEXTCASTER_MAIL_FROM: 'hi@ex.test' })
+  expect(c2.smtpUrl).toBe('smtp://localhost:1025')
+  expect(c2.mailEnabled).toBe(true)
+  expect(c2.mailFrom).toBe('hi@ex.test')
+})
