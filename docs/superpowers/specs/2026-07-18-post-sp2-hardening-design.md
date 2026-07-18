@@ -192,3 +192,9 @@ the sole injected seam, justified because a test must never call the real
 `process.exit`. Explicitly kept (real safety, per the review's own scope note):
 the `DRAIN_MS + 2000` hard backstop, `Repository.close()`'s `wal_checkpoint(TRUNCATE)`,
 the `started`/`done` double-guard, and `closeIdleConnections?.()` before `close`.
+
+**Rev 2 (2026-07-18)** — the plan's ponytail review dropped the `installShutdown`
+wrapper this design named: it was a one-caller, zero-logic, untested export. Only
+`createShutdown(deps)` (the tested handler factory) ships; `server.ts` registers
+it on SIGTERM/SIGINT inline (two `process.once` lines). No behavior change — the
+teardown, guards, and `DRAIN_MS` timing are identical. See the plan's Rev 1.

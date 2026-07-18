@@ -4,7 +4,7 @@
 
 **Goal:** Core drains + exits cleanly on SIGTERM/SIGINT, and the two untested SP2 web API client functions get coverage.
 
-**Architecture:** A new `core/src/shutdown.ts` owns the shutdown orchestration as a testable `createShutdown(deps)` (returns the signal handler) + a thin `installShutdown(deps)` wrapper that wires it to real signals. `server.ts` captures the server handle and passes a `stopLoops` closure. The repository gains a `close()` that checkpoints the WAL and closes the handle. The web tests mirror the existing `api.test.ts` fake-fetch style.
+**Architecture:** A new `core/src/shutdown.ts` exports a testable `createShutdown(deps)` that returns the signal handler; `server.ts` captures the server handle, passes a `stopLoops` closure, and wires the handler to SIGTERM/SIGINT directly (two `process.once` lines — no wrapper). The repository gains a `close()` that checkpoints the WAL and closes the handle. The web tests mirror the existing `api.test.ts` fake-fetch style.
 
 **Tech Stack:** Node 22 (native type-stripping, no build step), Hono + `@hono/node-server`, better-sqlite3, vitest, SvelteKit (web).
 
@@ -22,10 +22,10 @@
 
 ## File Structure
 
-- **Create `core/src/shutdown.ts`** — `ShutdownDeps`, `createShutdown(deps)` (the testable handler factory), `installShutdown(deps)` (signal wiring). One responsibility: orchestrate a clean shutdown.
+- **Create `core/src/shutdown.ts`** — `ShutdownDeps` + `createShutdown(deps)` (the testable handler factory). One responsibility: build the clean-shutdown handler. (Signal wiring is two lines at the `server.ts` call site — no exported wrapper.)
 - **Modify `core/src/domain/repository.ts`** — add `close(): void` to the `Repository` interface.
 - **Modify `core/src/storage/sqlite.ts`** — implement `close()` on `SqliteRepository`.
-- **Modify `core/src/server.ts`** — capture `server`, hold `pollTimer`/`sweepTimer`, call `installShutdown`.
+- **Modify `core/src/server.ts`** — capture `server`, hold `pollTimer`/`sweepTimer`, register `createShutdown`'s handler on SIGTERM/SIGINT.
 - **Create `core/test/repo-close.test.ts`** — `Repository.close()` behavior.
 - **Create `core/test/shutdown.test.ts`** — `createShutdown` behavior (fakes + fake timers).
 - **Modify `web/src/lib/api.test.ts`** — tests for `listAdminFeeds` + `removeRemoteFeed` (functions already exist in `api.ts`).
@@ -103,19 +103,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 2: `shutdown.ts` (`createShutdown` + `installShutdown`) and `server.ts` wiring
+### Task 2: `shutdown.ts` (`createShutdown`) and `server.ts` wiring
 
 **Files:**
 - Create: `core/src/shutdown.ts`
 - Test: `core/test/shutdown.test.ts`
-- Modify: `core/src/server.ts` (capture server handle; hold + reassign `pollTimer`/`sweepTimer`; call `installShutdown`; add the import)
+- Modify: `core/src/server.ts` (capture server handle; hold + reassign `pollTimer`/`sweepTimer`; register the handler on SIGTERM/SIGINT; add the import)
 
 **Interfaces:**
 - Consumes: `Repository.close()` (Task 1); `serve(...)` from `@hono/node-server` returns a Node `http.Server` (has `close(cb?)`, `closeIdleConnections()`, `closeAllConnections()`).
 - Produces:
   - `interface ShutdownDeps { server: { close(cb?: () => void): unknown; closeIdleConnections?(): void; closeAllConnections?(): void }; repo: { close(): void }; stopLoops: () => void; exit?: (code: number) => void }`
-  - `createShutdown(deps: ShutdownDeps): (signal: string) => void` — the testable signal handler.
-  - `installShutdown(deps: ShutdownDeps): void` — registers `createShutdown(deps)` on SIGTERM + SIGINT.
+  - `createShutdown(deps: ShutdownDeps): (signal: string) => void` — the testable signal handler. `server.ts` registers it on SIGTERM + SIGINT inline (no wrapper export).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -211,8 +210,9 @@ export interface ShutdownDeps {
   exit?: (code: number) => void
 }
 
-// Returns the signal handler. Split out from installShutdown so the teardown is
-// unit-testable by calling the handler directly (no real signals, no process.exit).
+// Returns the signal handler. server.ts wires it to SIGTERM/SIGINT. Returning the
+// handler (rather than registering signals in here) is what makes the teardown
+// unit-testable — call the handler directly, no real signals, no process.exit.
 export function createShutdown(deps: ShutdownDeps): (signal: string) => void {
   const exit = deps.exit ?? ((code: number) => process.exit(code))
   let started = false
@@ -240,12 +240,6 @@ export function createShutdown(deps: ShutdownDeps): (signal: string) => void {
     setTimeout(() => doExit(1), DRAIN_MS + 2000).unref()
   }
 }
-
-export function installShutdown(deps: ShutdownDeps): void {
-  const handler = createShutdown(deps)
-  process.once('SIGTERM', () => handler('SIGTERM'))
-  process.once('SIGINT', () => handler('SIGINT'))
-}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -258,7 +252,7 @@ Expected: PASS (4/4).
 Add the import near the other local imports (top of file):
 
 ```ts
-import { installShutdown } from './shutdown.ts'
+import { createShutdown } from './shutdown.ts'
 ```
 
 Change the poll loop so its timer handle is held and reassigned (currently `setTimeout(loop, …)` discards the handle):
@@ -300,13 +294,15 @@ Capture the server handle and install shutdown (replaces the bare `serve(...)` a
 const server = serve({ fetch: app.fetch, port: config.port })
 console.log(`textcaster core listening on :${config.port}`)
 
-installShutdown({ server, repo, stopLoops: () => { clearTimeout(pollTimer); clearTimeout(sweepTimer) } })
+const handler = createShutdown({ server, repo, stopLoops: () => { clearTimeout(pollTimer); clearTimeout(sweepTimer) } })
+process.once('SIGTERM', () => handler('SIGTERM'))
+process.once('SIGINT', () => handler('SIGINT'))
 ```
 
 - [ ] **Step 6: Typecheck the wiring**
 
 Run: `npm run typecheck -w core`
-Expected: clean. In particular, `serve(...)`'s `ServerType` return structurally satisfies `ShutdownDeps.server` (Node's `http.Server` has `close`/`closeIdleConnections`/`closeAllConnections`), and `repo` satisfies `{ close(): void }` via Task 1. If TS reports `pollTimer`/`sweepTimer` "used before assigned", they are assigned synchronously before `installShutdown` runs — if strict flow analysis still objects, use `let pollTimer!: NodeJS.Timeout` (definite-assignment) rather than widening to `| undefined`.
+Expected: clean. In particular, `serve(...)`'s `ServerType` return structurally satisfies `ShutdownDeps.server` (Node's `http.Server` has `close`/`closeIdleConnections`/`closeAllConnections`), and `repo` satisfies `{ close(): void }` via Task 1. If TS reports `pollTimer`/`sweepTimer` "used before assigned", they are assigned synchronously before the shutdown handler could ever run — if strict flow analysis still objects, use `let pollTimer!: NodeJS.Timeout` (definite-assignment) rather than widening to `| undefined`.
 
 - [ ] **Step 7: Run the full core suite**
 
@@ -400,3 +396,16 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Tasks are ordered by dependency: Task 1 (`repo.close`) is consumed by Task 2's `server.ts` wiring; Task 2's shutdown unit test is independent of Task 1 (it uses a fake repo). Task 3 (web) is fully independent and could run in any order.
 - `server.ts` is a top-level bootstrap script (work runs at import), so it is deliberately not imported by tests; its wiring is verified by `npm run typecheck -w core` + review, and the shutdown *logic* is fully unit-tested via `createShutdown` in Task 2.
 - Watch for the parallel session's in-flight edits in this shared checkout: confirm `npm test -w core` is green on the current HEAD before starting, so a pre-existing red isn't misattributed to this work.
+
+## Revisions
+
+**Rev 1 (2026-07-18)** — folded a ponytail review of this plan (1 cut): dropped the
+`installShutdown(deps)` wrapper (one caller, zero logic, untested glue) and inlined
+its two `process.once` lines at the `server.ts` call site. `shutdown.ts` now exports
+only `createShutdown` (the tested unit) + `ShutdownDeps`. Net −3 lines, one fewer
+export; no change to testability (the 4 unit tests still target `createShutdown`
+directly). This supersedes the spec's `installShutdown` export
+(`2026-07-18-post-sp2-hardening-design.md` §1/§3), which is an implementation detail.
+The reviewer confirmed the rest at the floor: the 4 shutdown tests each map to a
+distinct safety property, the `server.ts` timer-capture is the minimum cancelable
+change, and 4 web tests match `api.test.ts`'s 2-per-function convention.
