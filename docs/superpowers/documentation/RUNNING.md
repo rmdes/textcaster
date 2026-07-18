@@ -366,6 +366,7 @@ From now on, schema upgrades apply automatically at startup.
   emphasis, quotes, headings, code, lists, lazy images — everything else is
   stripped at render time, server-side. Feeds always re-emit remote
   content untouched (pass-through); only display is sanitized.
+- Post edits are tracked in the `post_revisions` table + `edited_at` column (migration 9). Local posts can be edited by their author; all revisions are retained and queryable via `GET /post/<id>/revisions`.
 
 ## Following & lenses
 
@@ -438,6 +439,8 @@ feed item as `<source:comments count="N" feedUrl="…"/>`, pointing at:
 |---|---|---|
 | `GET` | `/post/<id>/comments.xml` | RSS feed of direct replies to `<id>` — the Winer-native "threadwalker" pull side. Always serves regardless of `TEXTCASTER_PUBLIC_URL`; only the `<source:comments>` advertisement pointing at it requires `TEXTCASTER_PUBLIC_URL` and is omitted without it. |
 | `GET` | `/post/<id>/thread` | The whole conversation (root + all descendants) as JSON. |
+| `PATCH` | `/post/<id>` | Edit your own local post (session auth required, owner + source=`local` gate). No-op on unchanged content; records edit with prior version retained. |
+| `GET` | `/post/<id>/revisions` | Edit history for `<id>`; returns `{ post, revisions }` (array of prior versions, newest first). Public; 404 if unknown. |
 
 ## Deployment note
 
