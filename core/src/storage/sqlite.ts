@@ -411,6 +411,11 @@ export class SqliteRepository implements Repository {
     })()
   }
 
+  close(): void {
+    this.raw.pragma('wal_checkpoint(TRUNCATE)')
+    this.raw.close()
+  }
+
   // Idle = latest session update, else auth-user createdAt. Anon guests are
   // few; candidate selection in JS dodges better-auth's date-storage format
   // (new Date() parses ISO strings and epoch numbers alike).
