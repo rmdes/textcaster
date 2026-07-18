@@ -14,4 +14,5 @@ export interface TimelineEntry {
 	replyCount?: number
 	sourceName?: string | null
 	sourceFeedUrl?: string | null
+	editedAt?: string | null
 }

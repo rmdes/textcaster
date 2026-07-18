@@ -86,6 +86,22 @@ export async function createPost(f: typeof fetch, input: { content: string; inRe
 	if (!res.ok) throw new Error(await errorMessage(res, `createPost ${res.status}`))
 }
 
+export async function editPost(f: typeof fetch, id: string, content: string): Promise<void> {
+	const res = await f(`${base()}/posts/${encodeURIComponent(id)}`, {
+		method: 'PATCH',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ content })
+	})
+	if (!res.ok) throw new Error(await errorMessage(res, `editPost ${res.status}`))
+}
+
+export interface Revision { id: string; title: string | null; content: string; contentMarkdown: string | null; seenAt: string }
+export async function getRevisions(f: typeof fetch, id: string): Promise<{ post: TimelineEntry; revisions: Revision[] }> {
+	const res = await f(`${base()}/posts/${encodeURIComponent(id)}/revisions`)
+	if (!res.ok) throw new Error(await errorMessage(res, `revisions ${res.status}`))
+	return (await res.json()) as { post: TimelineEntry; revisions: Revision[] }
+}
+
 // emailVerified is optional and NOT sent by core's /me today (hard verification
 // means an unverified password account can never reach a resolvable session —
 // see auth.ts). Typed here so the identity bar's verify-nudge branch (which

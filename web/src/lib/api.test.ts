@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest'
-import { getTimeline, createPost, addRemoteUser, getMe, listAdminFeeds, removeRemoteFeed, getAdminOverview, listAdminUsers } from './api.ts'
+import { getTimeline, createPost, addRemoteUser, getMe, listAdminFeeds, removeRemoteFeed, getAdminOverview, listAdminUsers, editPost, getRevisions } from './api.ts'
 
 const entry = {
 	id: 'p1',
@@ -104,4 +104,18 @@ test('listAdminUsers returns the users array', async () => {
 test('getAdminOverview surfaces the core error message', async () => {
 	const f = vi.fn(async () => new Response(JSON.stringify({ error: 'admin only' }), { status: 403 }))
 	await expect(getAdminOverview(f as unknown as typeof fetch)).rejects.toThrow('admin only')
+})
+
+test('editPost PATCHes /posts/:id with the content', async () => {
+	const f = vi.fn(async (..._args: unknown[]) => new Response(null, { status: 200 }))
+	await editPost(f as unknown as typeof fetch, 'p1', 'new body')
+	expect(f).toHaveBeenCalledWith('http://localhost:8787/posts/p1', expect.objectContaining({ method: 'PATCH' }))
+	expect(JSON.parse(String((f.mock.calls[0][1] as RequestInit).body))).toEqual({ content: 'new body' })
+})
+
+test('getRevisions GETs /posts/:id/revisions', async () => {
+	const f = vi.fn(async () => new Response(JSON.stringify({ post: { id: 'p1' }, revisions: [] }), { status: 200 }))
+	const out = await getRevisions(f as unknown as typeof fetch, 'p1')
+	expect(f).toHaveBeenCalledWith('http://localhost:8787/posts/p1/revisions')
+	expect(out.revisions).toEqual([])
 })
