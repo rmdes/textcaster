@@ -31,6 +31,16 @@ export interface Post {
   sourceName?: string | null      // per-item attribution from aggregate feeds (RSS <source url>name</source>)
   sourceFeedUrl?: string | null
   contentMarkdown?: string | null // incoming source:markdown, verbatim (remote); null otherwise
+  editedAt?: string | null
+}
+
+export interface PostRevision {
+  id: string
+  postId: string
+  title: string | null
+  content: string
+  contentMarkdown: string | null
+  seenAt: string
 }
 
 export interface NewLocalUser { handle: string; displayName: string; authUserId?: string }

@@ -1,4 +1,4 @@
-import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry, TimelineCursor, Subscription, PushSubscription, PushProtocol } from './types.ts'
+import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry, TimelineCursor, Subscription, PushSubscription, PushProtocol, PostRevision } from './types.ts'
 
 export interface Repository {
   createLocalUser(u: NewLocalUser): Promise<User>
@@ -29,6 +29,9 @@ export interface Repository {
   getThread(rootId: string): Promise<TimelineEntry[]>
   adoptOrphans(parent: Post): Promise<void>
   backfillItemExtras(authorId: string, guid: string, sourceName: string | null, sourceFeedUrl: string | null, contentMarkdown: string | null, url: string | null): Promise<void>
+  getEditableByGuid(authorId: string, guid: string): Promise<{ id: string; title: string | null; content: string; contentMarkdown: string | null } | undefined>
+  recordEdit(postId: string, next: { title: string | null; content: string; contentMarkdown: string | null; editedAt: string }): Promise<void>
+  getRevisions(postId: string): Promise<PostRevision[]>
   countRepliesByPostIds(ids: string[]): Promise<Map<string, number>>
   listRepliesByPostId(id: string): Promise<TimelineEntry[]>
   getPostsByAuthor(authorId: string, limit: number): Promise<Post[]>

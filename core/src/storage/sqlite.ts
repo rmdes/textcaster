@@ -6,18 +6,19 @@ import type { User, Post, NewLocalUser, NewRemoteUser, TimelineEntry, TimelineCu
 import { HandleTakenError } from '../domain/types.ts'
 
 interface UsersTable { id: string; kind: 'local' | 'remote'; handle: string; display_name: string; feed_url: string | null; created_at: string; auth_user_id: string | null }
-interface PostsTable { id: string; author_id: string; source: 'local' | 'remote'; guid: string; title: string | null; content: string; url: string | null; published_at: string; created_at: string; in_reply_to: string | null; in_reply_to_post_id: string | null; thread_root_id: string | null; source_name: string | null; source_feed_url: string | null; content_markdown: string | null }
+interface PostsTable { id: string; author_id: string; source: 'local' | 'remote'; guid: string; title: string | null; content: string; url: string | null; published_at: string; created_at: string; in_reply_to: string | null; in_reply_to_post_id: string | null; thread_root_id: string | null; source_name: string | null; source_feed_url: string | null; content_markdown: string | null; edited_at: string | null }
 interface SubscriptionsTable { id: string; protocol: 'websub' | 'rsscloud'; topic: string; callback: string; callback_host: string; secret: string | null; expires_at: string; created_at: string }
 interface PushSubscriptionsTable { id: string; user_id: string; mode: 'websub' | 'rsscloud'; endpoint: string; topic: string; callback_token: string; secret: string | null; state: 'pending' | 'active'; expires_at: string; created_at: string }
 interface FollowsTable { follower_id: string; followed_id: string; created_at: string }
-interface DB { users: UsersTable; posts: PostsTable; subscriptions: SubscriptionsTable; push_subscriptions: PushSubscriptionsTable; follows: FollowsTable }
+interface PostRevisionsTable { id: string; post_id: string; title: string | null; content: string; content_markdown: string | null; seen_at: string }
+interface DB { users: UsersTable; posts: PostsTable; subscriptions: SubscriptionsTable; push_subscriptions: PushSubscriptionsTable; follows: FollowsTable; post_revisions: PostRevisionsTable }
 
 function rowToUser(r: UsersTable): User {
   return { id: r.id, kind: r.kind, handle: r.handle, displayName: r.display_name, feedUrl: r.feed_url, createdAt: r.created_at, authUserId: r.auth_user_id }
 }
 
 function rowToPost(r: PostsTable): Post {
-  return { id: r.id, authorId: r.author_id, source: r.source, guid: r.guid, title: r.title, content: r.content, url: r.url, publishedAt: r.published_at, createdAt: r.created_at, inReplyTo: r.in_reply_to, inReplyToPostId: r.in_reply_to_post_id, threadRootId: r.thread_root_id, sourceName: r.source_name, sourceFeedUrl: r.source_feed_url, contentMarkdown: r.content_markdown }
+  return { id: r.id, authorId: r.author_id, source: r.source, guid: r.guid, title: r.title, content: r.content, url: r.url, publishedAt: r.published_at, createdAt: r.created_at, inReplyTo: r.in_reply_to, inReplyToPostId: r.in_reply_to_post_id, threadRootId: r.thread_root_id, sourceName: r.source_name, sourceFeedUrl: r.source_feed_url, contentMarkdown: r.content_markdown, editedAt: r.edited_at }
 }
 
 function rowToSubscription(r: SubscriptionsTable): Subscription {
@@ -320,6 +321,35 @@ export class SqliteRepository implements Repository {
       .where('guid', '=', guid)
       .execute()
   }
+  async getEditableByGuid(authorId: string, guid: string) {
+    const r = await this.db.selectFrom('posts').select(['id', 'title', 'content', 'content_markdown'])
+      .where('author_id', '=', authorId).where('guid', '=', guid).executeTakeFirst()
+    return r ? { id: r.id, title: r.title, content: r.content, contentMarkdown: r.content_markdown } : undefined
+  }
+
+  async recordEdit(postId: string, next: { title: string | null; content: string; contentMarkdown: string | null; editedAt: string }) {
+    // Atomic: snapshot the CURRENT stored version, then overwrite. seen_at on the
+    // snapshot = the moment it was superseded (this edit's time).
+    await this.db.transaction().execute(async (trx) => {
+      const cur = await trx.selectFrom('posts').select(['title', 'content', 'content_markdown'])
+        .where('id', '=', postId).executeTakeFirst()
+      if (!cur) return
+      await trx.insertInto('post_revisions').values({
+        id: randomUUID(), post_id: postId, title: cur.title, content: cur.content,
+        content_markdown: cur.content_markdown, seen_at: next.editedAt,
+      }).execute()
+      await trx.updateTable('posts').set({
+        title: next.title, content: next.content, content_markdown: next.contentMarkdown, edited_at: next.editedAt,
+      }).where('id', '=', postId).execute()
+    })
+  }
+
+  async getRevisions(postId: string) {
+    const rows = await this.db.selectFrom('post_revisions').selectAll()
+      .where('post_id', '=', postId).orderBy('seen_at', 'asc').orderBy('id', 'asc').execute()
+    return rows.map((r) => ({ id: r.id, postId: r.post_id, title: r.title, content: r.content, contentMarkdown: r.content_markdown, seenAt: r.seen_at }))
+  }
+
   async countRepliesByPostIds(ids: string[]): Promise<Map<string, number>> {
     if (ids.length === 0) return new Map()
     const rows = await this.db
@@ -570,6 +600,18 @@ const MIGRATIONS: string[][] = [
     // so remote feeds — always NULL — are unaffected)
     'ALTER TABLE users ADD COLUMN auth_user_id text',
     'CREATE UNIQUE INDEX users_auth_user_idx ON users (auth_user_id)',
+  ],
+  [
+    'ALTER TABLE posts ADD COLUMN edited_at text',
+    `CREATE TABLE post_revisions (
+      id text PRIMARY KEY,
+      post_id text NOT NULL REFERENCES posts(id),
+      title text,
+      content text NOT NULL,
+      content_markdown text,
+      seen_at text NOT NULL
+    )`,
+    'CREATE INDEX post_revisions_post_idx ON post_revisions (post_id, seen_at)',
   ],
 ]
 
