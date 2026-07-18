@@ -7,7 +7,7 @@ import { discoverFeed } from './discovery.ts'
 import { checkCallbackUrl } from './push-guard.ts'
 import type { LookupFn } from './push-guard.ts'
 
-export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string; inReplyTo: string | null; sourceName: string | null; sourceFeedUrl: string | null; contentMarkdown: string | null }
+export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string; inReplyTo: string | null; sourceName: string | null; sourceFeedUrl: string | null; contentMarkdown: string | null; updatedAt: string | null }
 
 export interface FeedDiscovery {
   hubs: string[]
@@ -53,7 +53,7 @@ function itemInReplyTo(it: { sourceNs?: { inReplyTo?: { value?: string } }; thr?
 
 const httpOnly = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u) ? u : null)
 
-export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string, inReplyTo: string | null = null, source?: { title?: string; url?: string }, contentMarkdown: string | null = null): ParsedItem {
+export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string, inReplyTo: string | null = null, source?: { title?: string; url?: string }, contentMarkdown: string | null = null, updatedAt: string | null = null): ParsedItem {
   // Item links come from remote feed content and end up as <a href> in the web
   // client — only http(s) survives (a javascript: link would be click-to-XSS).
   // The guid fallback chain keeps the RAW value: it's an opaque dedup id, and
@@ -70,6 +70,7 @@ export function toParsedItem(guid: string | undefined, title: string | null, con
     sourceName: source?.title ?? null,
     sourceFeedUrl: httpOnly(source?.url),
     contentMarkdown,
+    updatedAt,
   }
 }
 
@@ -88,14 +89,14 @@ export async function parseFeedWithMeta(body: string): Promise<{ items: ParsedIt
   const parsed = parseFeedDocument(cleanBody)
   if (parsed.format === 'json') {
     const items = (parsed.feed.items ?? []).map((it) =>
-      toParsedItem(it.id, it.title ?? null, it.content_html ?? it.content_text ?? '', it.url ?? null, it.date_published ?? '', now))
+      toParsedItem(it.id, it.title ?? null, it.content_html ?? it.content_text ?? '', it.url ?? null, it.date_published ?? '', now, null, undefined, null, it.date_modified ?? null))
     const hubs = (parsed.feed.hubs ?? []).map((h) => h.url).filter((u): u is string => typeof u === 'string')
     return { items, discovery: { hubs, self: parsed.feed.feed_url ?? null, cloud: null } }
   }
   if (parsed.format === 'atom') {
     const items = (parsed.feed.entries ?? []).map((it) => {
       const url = it.links?.find((l) => l.href && (!l.rel || l.rel === 'alternate'))?.href ?? null
-      return toParsedItem(it.id, it.title ?? null, it.content ?? it.summary ?? '', url, it.published ?? it.updated ?? '', now, itemInReplyTo(it))
+      return toParsedItem(it.id, it.title ?? null, it.content ?? it.summary ?? '', url, it.published ?? it.updated ?? '', now, itemInReplyTo(it), undefined, null, it.updated ?? null)
     })
     return { items, discovery: { ...linksToDiscovery(parsed.feed.links), cloud: null } }
   }
@@ -118,6 +119,7 @@ export async function parseFeedWithMeta(body: string): Promise<{ items: ParsedIt
       itemInReplyTo(it),
       it.source,
       it.sourceNs?.markdown ?? null,
+      it.atom?.updated ?? null,
     ))
   const c = parsed.feed.cloud
   const cloud = c && typeof c.domain === 'string' && typeof c.path === 'string' && c.protocol === 'http-post' && typeof c.port === 'number'
@@ -165,10 +167,23 @@ export async function ingestItems(repo: Repository, bus: EventBus, user: User, i
       await repo.adoptOrphans(post)
       if (!backfill) bus.emitNewPost({ ...post, author: user })
       inserted++
-    } else if (item.sourceName || item.sourceFeedUrl || item.contentMarkdown || item.url) {
-      // Existing post from before attribution/markdown/permalink-url landed:
-      // fill it in silently.
+    } else {
+      // ponytail: one getEditableByGuid SELECT per already-seen item per poll
+      // (~50/feed/cycle). Fine at current scale; add a hash-column short-circuit
+      // only if poll read-volume ever bites.
+      const stored = await repo.getEditableByGuid(user.id, item.guid)
+      const changed = stored && (item.content !== stored.content || item.title !== stored.title || item.contentMarkdown !== stored.contentMarkdown)
+      if (stored && changed) {
+        const parsedUpdated = item.updatedAt ? new Date(item.updatedAt) : null
+        const editedAt = parsedUpdated && !Number.isNaN(parsedUpdated.getTime()) ? parsedUpdated.toISOString() : now.toISOString()
+        await repo.recordEdit(stored.id, { title: item.title, content: item.content, contentMarkdown: item.contentMarkdown, editedAt })
+      }
+      // Attribution/url still fill in place (per-column COALESCE), edit or not.
       await repo.backfillItemExtras(user.id, item.guid, item.sourceName, item.sourceFeedUrl, item.contentMarkdown, item.url)
+      if (stored && changed && !backfill) {
+        const updated = await repo.getPost(stored.id)
+        if (updated) bus.emitNewPost({ ...updated, author: user })
+      }
     }
   }
   return inserted

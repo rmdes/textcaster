@@ -306,7 +306,7 @@ test('comments feed: a remote cross-instance reply keeps its origin guid and sti
   const dan = await repo.createRemoteUser({ handle: 'dan-remote', displayName: 'Dan', feedUrl: 'https://elsewhere.example/users/dan/feed.xml' })
   await ingestItems(repo, createEventBus(), dan, [{
     guid: 'origin-guid-77', title: null, content: 'a remote reply', url: 'https://elsewhere.example/notes/77',
-    publishedAt: '2026-01-03T00:00:00.000Z', inReplyTo: root.url, sourceName: null, sourceFeedUrl: null, contentMarkdown: null,
+    publishedAt: '2026-01-03T00:00:00.000Z', inReplyTo: root.url, sourceName: null, sourceFeedUrl: null, contentMarkdown: null, updatedAt: null,
   }])
   const replies = await service.listRepliesByPostId(root.id)
   expect(replies.map((r) => r.content)).toContain('a remote reply') // sanity: ingest really resolved onto the local root
