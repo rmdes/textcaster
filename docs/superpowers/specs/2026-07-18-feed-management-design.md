@@ -108,9 +108,8 @@ A new admin-only web route:
 - **Load** (`+page.server.ts`): 404/redirect unless `data.me.isAdmin`; fetches
   `GET /admin/feeds` from core server-side, forwarding the admin's session
   cookie (the existing web→core `authedFetch` pattern).
-- **UI:** lists each instance feed (handle, feed URL, post count) with a
-  **remove** button, and an **add-feed** form (feed URL + optional handle/display
-  name). Form actions proxy to core `POST /users` / `DELETE /users/:handle`,
+- **UI:** lists each instance feed (handle, feed URL) with a **remove** button,
+  and an **add-feed** form (feed URL + optional handle/display name). Form actions proxy to core `POST /users` / `DELETE /users/:handle`,
   forwarding the session; use `fail()`/`redirect()` per SvelteKit conventions.
 - **`/admin` is one plain page** (list feeds + add/remove) — not a section/panel
   container pre-built for future siblings (there's no admin scaffolding in `web/`
