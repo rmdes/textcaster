@@ -81,6 +81,10 @@
 			<p class="notice" role="alert">Core API unreachable — is the core server running?</p>
 		{/if}
 
+		{#if data.addedFeed}
+			<p class="notice confirm" role="status">Now monitoring <strong>@{data.addedFeed}</strong> — its posts appear in your timeline as they publish.</p>
+		{/if}
+
 		{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
 
 		<ul class="timeline">

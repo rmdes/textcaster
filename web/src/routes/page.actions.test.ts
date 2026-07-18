@@ -66,7 +66,8 @@ test('compose returns fail(400) when the core rejects the request', async () => 
 test('addRemote posts to the core (no mint, plain cookie forward) and redirects', async () => {
 	const fetch = vi.fn(async () => new Response(null, { status: 201 }))
 	const event = sessionedEvent(formRequest('addRemote', { handle: 'bob', feedUrl: 'https://example.com/feed.xml' }), fetch)
-	await expect(actions.addRemote(event as never)).rejects.toMatchObject({ status: 303 })
+	// Redirect carries the added handle so the home page can flash a confirmation.
+	await expect(actions.addRemote(event as never)).rejects.toMatchObject({ status: 303, location: '/?feed=bob' })
 	expect(fetch).toHaveBeenCalled()
 })
 

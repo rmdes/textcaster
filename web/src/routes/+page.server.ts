@@ -6,14 +6,16 @@ import { authedFetch, cookieHeader, ensureSessionFetch } from '$lib/server/sessi
 
 export const load: PageServerLoad = async ({ fetch, url }) => {
 	const before = url.searchParams.get('before') ?? undefined
+	// Post-redirect success flash for add-remote (same SSR pattern as login's ?reset=1).
+	const addedFeed = url.searchParams.get('feed') ?? undefined
 	const isFirstPage = !before
 	try {
 		const { timeline, nextCursor } = await getTimeline(fetch, { before })
 		// Widget data, never load-bearing: a peers failure must not down the page.
 		const peers = await getPeers(fetch).catch(() => [])
-		return { timeline: enrichEntries(timeline), nextCursor, isFirstPage, peers }
+		return { timeline: enrichEntries(timeline), nextCursor, isFirstPage, peers, addedFeed }
 	} catch {
-		return { timeline: [], nextCursor: null, isFirstPage, coreDown: true, peers: [] }
+		return { timeline: [], nextCursor: null, isFirstPage, coreDown: true, peers: [], addedFeed }
 	}
 }
 
@@ -43,6 +45,6 @@ export const actions = {
 		} catch (err) {
 			return fail(400, { error: err instanceof Error ? err.message : 'addRemoteUser failed' })
 		}
-		throw redirect(303, '/')
+		throw redirect(303, `/?feed=${encodeURIComponent(handle)}`)
 	}
 } satisfies import('./$types').Actions

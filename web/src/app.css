@@ -529,6 +529,13 @@ button:hover {
 	margin: 0 0 var(--space-md);
 }
 
+/* Affirmative flash (feed added): same box, accent rail instead of the
+   destructive one — the palette has no dedicated success colour, and accent
+   is its affirmative/CTA token. Pair with .notice. */
+.confirm {
+	border-left-color: var(--color-accent);
+}
+
 /* Outliner wedge, labeled: a pill that says what it hides ("3 replies").
    The shade is still the signal — accent when there are replies you aren't
    seeing, muted once open (or on the page-nav fallback). */
