@@ -69,6 +69,9 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
     getPost(id: string) {
       return repo.getPost(id)
     },
+    getRevisions(id: string) {
+      return repo.getRevisions(id)
+    },
     getThread(rootId: string) {
       return repo.getThread(rootId)
     },

@@ -124,6 +124,12 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.json({ post: entry }, 200)
   })
 
+  app.get('/posts/:id/revisions', async (c) => {
+    const post = await service.getPost(c.req.param('id'))
+    if (!post) return c.json({ error: 'unknown post' }, 404)
+    return c.json({ post, revisions: await service.getRevisions(post.id) })
+  })
+
   async function resolveUser(handleRaw: string): Promise<import('../domain/types.ts').User | undefined> {
     return service.getUserByHandle(handleRaw.toLowerCase())
   }
