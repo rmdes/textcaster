@@ -15,8 +15,10 @@ async function makeApp(adminEmails: string[] = ['boss@x.test']) {
 
 test('listUsers: registered locals + remote feeds, excludes guests', async () => {
   const { app, repo } = await makeApp()
-  await registeredSession(app, 'reg@x.test', repo)   // registered local
-  await anonSession(app)                              // guest (excluded)
+  const reg = await registeredSession(app, 'reg@x.test', repo)
+  await app.request('/me', { headers: { cookie: reg } })    // real mint → registered local core row (isAnonymous=0)
+  const guest = await anonSession(app)
+  await app.request('/me', { headers: { cookie: guest } })  // real mint → guest core row (isAnonymous=1)
   await repo.createRemoteUser({ handle: 'feed1', displayName: 'Feed', feedUrl: 'https://e/f.xml' })
   const users = repo.listUsers()
   const kinds = users.map((u) => u.kind).sort()
