@@ -52,7 +52,7 @@ chown -R cloudron:cloudron /app/data
 
 # nginx first, so the health check answers during boot.
 cp /app/pkg/nginx.conf /run/textcaster-nginx.conf
-mkdir -p /run/nginx-body /run/nginx-proxy
+mkdir -p /run/nginx-body /run/nginx-proxy /run/nginx-fastcgi /run/nginx-uwsgi /run/nginx-scgi
 echo "==> Starting nginx on :8000"
 nginx -c /run/textcaster-nginx.conf &
 
