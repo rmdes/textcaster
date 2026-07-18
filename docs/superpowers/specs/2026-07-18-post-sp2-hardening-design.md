@@ -39,11 +39,12 @@ unit-testable without spawning a process or calling the real `process.exit`.
 export interface ShutdownDeps {
   server: { close(cb?: () => void): unknown; closeIdleConnections?(): void; closeAllConnections?(): void }
   repo: { close(): void }
-  timers: NodeJS.Timeout[] | (() => NodeJS.Timeout[])  // getter form reads the currently-pending handles
-  drainMs?: number                 // default 5000
-  exit?: (code: number) => void    // default process.exit
-  log?: (msg: string) => void      // default console.log
+  stopLoops: () => void            // clears the poll + sweep timers (server.ts closes over the current handles)
+  exit?: (code: number) => void    // default process.exit — the one seam a test needs (never the real exit in tests)
 }
+
+// DRAIN_MS = 5000 is a hardcoded module constant in shutdown.ts (no operator knob;
+// the test advances vi fake timers against it).
 
 export function installShutdown(deps: ShutdownDeps): void
 ```
@@ -53,20 +54,20 @@ Behavior — `installShutdown` registers the handler on `SIGTERM` and `SIGINT`
 a module-level `started` guard also makes the teardown itself idempotent. On the
 first signal it:
 
-1. **Stops the loops** — `clearTimeout` on every handle in `timers` (the poll +
-   sweep `setTimeout` chains stop rescheduling).
+1. **Stops the loops** — `deps.stopLoops()` (server.ts's closure `clearTimeout`s
+   the currently-pending poll + sweep handles, so they stop rescheduling).
 2. **Sheds idlers, drains in-flight** — `server.closeIdleConnections?.()` (drop
    keep-alive sockets with no active request now), then `server.close(cb)` (stop
    accepting new connections; the callback fires once all remaining connections
    end).
 3. **Clean exit in the callback** — `repo.close()` then `exit(0)`.
-4. **Force SSE closed after the drain window** — after `drainMs` (default 5000),
+4. **Force SSE closed after the drain window** — after `DRAIN_MS` (5000),
    `server.closeAllConnections?.()`. Long-lived SSE streams never end on their
    own, so without this `server.close`'s callback would never fire. Forcing them
    closed lets the callback run → clean exit. SSE clients reconnect on their own
    (`EventSource` auto-reconnect + the existing `Last-Event-ID` replay), so a
    forced close is safe.
-5. **Hard backstop** — an `exit(1)` scheduled at `drainMs + 2000`, `.unref()`'d
+5. **Hard backstop** — an `exit(1)` scheduled at `DRAIN_MS + 2000`, `.unref()`'d
    so it never itself keeps the process alive, in case `server.close`'s callback
    never fires (e.g. a socket wedged past `closeAllConnections`).
 
@@ -76,8 +77,9 @@ first call anyway; the guard is what makes the "backstop only if not already
 exited" behavior assertable in the test, where `exit` is a spy that doesn't
 terminate.
 
-The `exit`/`log`/`drainMs` injection is what makes step-by-step assertions
-possible in the test without terminating the runner.
+Injecting only `exit` (plus `vi.useFakeTimers()` for the `DRAIN_MS` timing) is
+what makes step-by-step assertions possible in the test without terminating the
+runner — no other seam is needed.
 
 ### 2. `Repository.close()` (`core/src/storage/sqlite.ts`)
 
@@ -106,10 +108,12 @@ Minimal, mechanical changes:
   `let pollTimer = setTimeout(loop, …)` (reassigned inside `loop`) and
   `let sweepTimer = setTimeout(sweepLoop, …)` (reassigned inside `sweepLoop`), so
   the handles passed to `installShutdown` are always the currently-pending ones.
-- After `serve(...)`: `installShutdown({ server, repo, timers: () => [pollTimer, sweepTimer], log: console.log })`.
-  Because the timers reschedule, `timers` is passed as a getter (`() => [...]`)
-  so shutdown clears the *currently-pending* handles, not stale ones captured at
-  startup. (`ShutdownDeps.timers` is therefore `NodeJS.Timeout[] | (() => NodeJS.Timeout[])`, normalized inside.)
+- After `serve(...)`: `installShutdown({ server, repo, stopLoops: () => { clearTimeout(pollTimer); clearTimeout(sweepTimer) } })`.
+  The `stopLoops` closure reads the *currently-pending* handles at shutdown time
+  (the loops reassign `pollTimer`/`sweepTimer` on every reschedule), so there's no
+  stale-snapshot problem and no need for `installShutdown` to know about timers at
+  all — it just calls `stopLoops()`. `console.log` is called directly inside
+  `shutdown.ts` (same as the loops), not injected.
 
 ### 4. SP2 web API tests (`web/src/lib/api.test.ts`)
 
@@ -129,7 +133,7 @@ Append tests mirroring the existing `createPost`/`addRemoteUser` style (a fake
   `closeIdleConnections`/`closeAllConnections` are called with `?.()` so a
   server object lacking them (a test fake, a future adapter) doesn't throw.
 - `repo.close()` runs inside `server.close`'s callback; if the callback never
-  fires, the `drainMs + 2000` backstop exits `1` (non-clean, but bounded — the
+  fires, the `DRAIN_MS + 2000` backstop exits `1` (non-clean, but bounded — the
   container restarts).
 - The API test additions assert the existing `errorMessage` failure path; no new
   runtime error handling in `api.ts` (the functions already throw on non-ok).
@@ -137,14 +141,14 @@ Append tests mirroring the existing `createPost`/`addRemoteUser` style (a fake
 ## Testing
 
 **Core (`core/test/shutdown.test.ts`, vitest, existing in-process style):**
-- On signal: every `timers` handle is `clearTimeout`'d; `server.closeIdleConnections`
+- On signal: `stopLoops` is called; `server.closeIdleConnections`
   and `server.close` are called; in `server.close`'s callback `repo.close()` then
   `exit(0)` are called (order asserted).
-- With `vi.useFakeTimers()`: `server.closeAllConnections` fires at `drainMs`; the
-  `exit(1)` backstop fires at `drainMs + 2000` only if the close callback hasn't
+- With `vi.useFakeTimers()`: `server.closeAllConnections` fires at `DRAIN_MS` (5000);
+  the `exit(1)` backstop fires at `DRAIN_MS + 2000` only if the close callback hasn't
   run.
 - Idempotence: invoking the handler twice runs the teardown once.
-- Fakes for `server`/`repo`/`exit`/`log`; no real `process.exit`, no real signals
+- Fakes for `server`/`repo`/`exit` + a `stopLoops` spy; no real `process.exit`, no real signals
   (call the registered handler directly, or register on a throwaway emitter).
 
 **Web (`web/src/lib/api.test.ts`):** `listAdminFeeds` + `removeRemoteFeed` happy
@@ -167,3 +171,24 @@ path (request shape + parsed result) and error path (throws core message), fake
 imported by tests; the shutdown logic lives in `shutdown.ts` precisely so it is
 importable and testable in isolation. `server.ts`'s own wiring is a thin,
 review-checked call — consistent with how the rest of the bootstrap is verified.
+
+## Revisions
+
+**Rev 1 (2026-07-18)** — folded a ponytail over-engineering review of this spec
+(3 cuts, all accepted; net ≈ −8 lines and one fewer DI seam). All target the
+`ShutdownDeps` shape, none touch a safety property:
+- **`timers` union → `stopLoops: () => void`.** Only the getter form was ever
+  wired; the `NodeJS.Timeout[] | (() => …)` union + "normalize inside" branch had
+  no caller. `installShutdown` no longer knows about timers — it calls
+  `deps.stopLoops()`, a closure `server.ts` already needs.
+- **`drainMs?` → hardcoded `DRAIN_MS = 5000`.** No operator knob is planned for
+  this batch (unlike `pollSeconds`/`anonTtlDays`); the test uses
+  `vi.useFakeTimers()` against the constant for identical coverage.
+- **Dropped `log?`.** No test asserts on log output and none in the repo spy on
+  `console.log`; `shutdown.ts` calls `console.log` directly like the loops do.
+
+`ShutdownDeps` is now 4 fields (`server`, `repo`, `stopLoops`, `exit`); `exit` is
+the sole injected seam, justified because a test must never call the real
+`process.exit`. Explicitly kept (real safety, per the review's own scope note):
+the `DRAIN_MS + 2000` hard backstop, `Repository.close()`'s `wal_checkpoint(TRUNCATE)`,
+the `started`/`done` double-guard, and `closeIdleConnections?.()` before `close`.
