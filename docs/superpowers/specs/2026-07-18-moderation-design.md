@@ -106,7 +106,7 @@ buttons are clearly labeled and confirmation-guarded; no `{@html}` introduced.
 ## Error handling
 
 - Both endpoints: `requireAdmin()` → non-admin session (registered or anon) 403,
-  no session 401; unknown target 404; wrong-kind target 409 (users) / 404 (posts).
+  no session 401; unknown target 404; a remote (wrong-kind) target 409 on both.
 - Web actions: non-admin never sees the affordances (the `/admin` layout gate +
   the `isAdmin` check on the post button); a non-admin who force-POSTs an action
   hits core's `requireAdmin` 403, caught into `fail()` — defense in depth, as SP2
