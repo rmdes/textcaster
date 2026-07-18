@@ -11,6 +11,7 @@ export interface Repository {
   updateUserProfile(userId: string, patch: { handle?: string; displayName?: string }): Promise<User>
   listRemoteUsers(): Promise<User[]>
   listTextcastingPeers(): Promise<User[]>
+  deleteUserCascade(id: string): void
   addFollow(followerId: string, followedId: string): Promise<void>
   removeFollow(followerId: string, followedId: string): Promise<void>
   listFollowing(followerId: string): Promise<User[]>

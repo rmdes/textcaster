@@ -399,6 +399,18 @@ export class SqliteRepository implements Repository {
     await this.db.deleteFrom('push_subscriptions').where('id', '=', id).execute()
   }
 
+  // Manual cascade for a user (no DB-level ON DELETE CASCADE; FKs are plain
+  // REFERENCES users(id)). Shared by sweepAnonymousUsers and DELETE /users.
+  deleteUserCascade(id: string): void {
+    const raw = this.raw
+    raw.transaction(() => {
+      raw.prepare(`DELETE FROM follows WHERE follower_id = ? OR followed_id = ?`).run(id, id)
+      raw.prepare(`DELETE FROM push_subscriptions WHERE user_id = ?`).run(id)
+      raw.prepare(`DELETE FROM posts WHERE author_id = ?`).run(id)
+      raw.prepare(`DELETE FROM users WHERE id = ?`).run(id)
+    })()
+  }
+
   // Idle = latest session update, else auth-user createdAt. Anon guests are
   // few; candidate selection in JS dodges better-auth's date-storage format
   // (new Date() parses ISO strings and epoch numbers alike).
@@ -414,24 +426,18 @@ export class SqliteRepository implements Repository {
       .prepare(`SELECT u.id FROM users u LEFT JOIN user au ON au.id = u.auth_user_id WHERE u.auth_user_id IS NOT NULL AND au.id IS NULL AND u.kind = 'local'`)
       .all() as { id: string }[]
 
-    const coreCascade = (coreUserId: string) => {
-      raw.prepare(`DELETE FROM follows WHERE follower_id = ? OR followed_id = ?`).run(coreUserId, coreUserId)
-      raw.prepare(`DELETE FROM push_subscriptions WHERE user_id = ?`).run(coreUserId)
-      raw.prepare(`DELETE FROM posts WHERE author_id = ?`).run(coreUserId)
-      raw.prepare(`DELETE FROM users WHERE id = ?`).run(coreUserId)
-    }
     let swept = 0
     raw.transaction(() => {
       for (const a of idle) {
         const core = raw.prepare(`SELECT id FROM users WHERE auth_user_id = ?`).get(a.id) as { id: string } | undefined
-        if (core) coreCascade(core.id)
+        if (core) this.deleteUserCascade(core.id)
         raw.prepare(`DELETE FROM session WHERE userId = ?`).run(a.id)
         raw.prepare(`DELETE FROM account WHERE userId = ?`).run(a.id)
         raw.prepare(`DELETE FROM user WHERE id = ?`).run(a.id)
         swept++
       }
       for (const o of orphans) {
-        coreCascade(o.id)
+        this.deleteUserCascade(o.id)
         swept++
       }
     })()
