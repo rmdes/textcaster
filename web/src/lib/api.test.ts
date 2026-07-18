@@ -147,3 +147,7 @@ test('deletePost DELETEs /admin/posts/:id', async () => {
 	await deletePost(f as unknown as typeof fetch, 'p1')
 	expect(f).toHaveBeenCalledWith('http://localhost:8787/admin/posts/p1', { method: 'DELETE' })
 })
+test('deletePost surfaces the core error', async () => {
+	const f = vi.fn(async () => new Response(JSON.stringify({ error: 'not a local post' }), { status: 409 }))
+	await expect(deletePost(f as unknown as typeof fetch, 'p1')).rejects.toThrow('not a local post')
+})
