@@ -8,15 +8,21 @@
 	import FeedIcon from '$lib/FeedIcon.svelte'
 	import Avatar from '$lib/Avatar.svelte'
 	import PostBody from '$lib/PostBody.svelte'
+	import EditedMarker from '$lib/EditedMarker.svelte'
+	import { mergeIncoming } from '$lib/live'
 	import { hiddenIds, fetchThread } from '$lib/wedge'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	let live = $state<TimelineEntry[]>([])
-	const posts = $derived([...live, ...data.timeline])
+	let edited = $state<Record<string, TimelineEntry>>({})
+	const pageIds = $derived(new Set(data.timeline.map((p) => p.id)))
+	const posts = $derived([...live, ...data.timeline].map((p) => edited[p.id] ?? p))
 
 	function onPost(entry: TimelineEntry) {
-		if (!posts.some((p) => p.id === entry.id)) live = [entry, ...live]
+		const r = mergeIncoming(live, edited, entry, pageIds)
+		live = r.live
+		edited = r.edited
 	}
 
 	// Group Textcasting peers by instance host: "which textcasters is this
@@ -96,6 +102,7 @@
 						<a class="handle" href="/u/{post.author.handle}">@{post.author.handle}</a>
 						<span class="kind">{post.source}</span>
 						<a class="permalink" href="/post/{post.id}"><time datetime={post.publishedAt}>{post.publishedAt.slice(0, 10)}</time></a>
+						<EditedMarker {post} />
 						<FeedIcon author={post.author} sourceName={post.sourceName} sourceFeedUrl={post.sourceFeedUrl} />
 					</div>
 					{#if post.title}<h2 class="title">{post.title}</h2>{/if}
@@ -119,6 +126,9 @@
 						<a class="source" href={post.inReplyTo} rel="noreferrer">in reply to ↗</a>
 					{/if}
 					{#if post.source === 'remote' && post.url}<a class="source" href={post.url} rel="noreferrer">{URL.parse(post.url)?.hostname ?? 'source'}</a>{/if}
+					{#if post.source === 'local' && data.me?.user.id === post.author.id}
+						<a class="edit" href="/post/{post.id}/edit">Edit</a>
+					{/if}
 					{#if expanded[post.id]}
 						<ReplyTree thread={expanded[post.id]} parentId={post.id} />
 					{/if}

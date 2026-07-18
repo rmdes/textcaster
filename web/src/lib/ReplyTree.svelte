@@ -4,6 +4,7 @@
 	import PostBody from './PostBody.svelte'
 	import Avatar from './Avatar.svelte'
 	import ReplyTree from './ReplyTree.svelte'
+	import EditedMarker from './EditedMarker.svelte'
 
 	let {
 		thread,
@@ -29,6 +30,7 @@
 				<strong>{reply.sourceName ?? reply.author.displayName}</strong>
 				<a class="handle" href="/u/{reply.author.handle}">@{reply.author.handle}</a>
 				<a class="permalink" href="/post/{reply.id}"><time datetime={reply.publishedAt}>{reply.publishedAt.slice(0, 10)}</time></a>
+				<EditedMarker post={reply} />
 			</div>
 			{#if reply.title}<h3 class="title">{reply.title}</h3>{/if}
 			<PostBody post={reply} />

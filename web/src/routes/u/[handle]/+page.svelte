@@ -6,6 +6,7 @@
 	import ReplyTree from '$lib/ReplyTree.svelte'
 	import FeedIcon from '$lib/FeedIcon.svelte'
 	import PostBody from '$lib/PostBody.svelte'
+	import EditedMarker from '$lib/EditedMarker.svelte'
 	import { keepEvent } from '$lib/lens'
 	import { fetchThread } from '$lib/wedge'
 
@@ -84,6 +85,7 @@
 				<div class="byline">
 					{#if post.sourceName}<strong>{post.sourceName}</strong>{/if}
 					<a class="permalink" href="/post/{post.id}"><time datetime={post.publishedAt}>{post.publishedAt.slice(0, 10)}</time></a>
+					<EditedMarker {post} />
 				</div>
 				{#if post.title}<h2 class="title">{post.title}</h2>{/if}
 				<PostBody {post} />
@@ -117,6 +119,9 @@
 					<a class="source" href={post.inReplyTo} rel="noreferrer">in reply to ↗</a>
 				{/if}
 				{#if post.source === 'remote' && post.url}<a href={post.url} rel="noreferrer">source</a>{/if}
+				{#if post.source === 'local' && data.me?.user.id === post.author.id}
+					<a class="edit" href="/post/{post.id}/edit">Edit</a>
+				{/if}
 				{#if expanded[post.id]}
 					<ReplyTree thread={expanded[post.id]} parentId={post.id} />
 				{:else if stackOpen[post.id]}
@@ -128,9 +133,13 @@
 								<div class="byline">
 									{#if p.sourceName}<strong>{p.sourceName}</strong>{/if}
 									<a class="permalink" href="/post/{p.id}"><time datetime={p.publishedAt}>{p.publishedAt.slice(0, 10)}</time></a>
+									<EditedMarker post={p} />
 								</div>
 								{#if p.title}<h3 class="title">{p.title}</h3>{/if}
 								<PostBody post={p} />
+								{#if p.source === 'local' && data.me?.user.id === p.author.id}
+									<a class="edit" href="/post/{p.id}/edit">Edit</a>
+								{/if}
 							</li>
 						{/each}
 					</ul>

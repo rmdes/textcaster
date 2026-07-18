@@ -7,6 +7,8 @@
 	import ReplyTree from '$lib/ReplyTree.svelte'
 	import PostBody from '$lib/PostBody.svelte'
 	import MarkdownComposer from '$lib/MarkdownComposer.svelte'
+	import EditedMarker from '$lib/EditedMarker.svelte'
+	import { mergeIncoming } from '$lib/live'
 	import { keepEvent } from '$lib/lens'
 	import { enhance } from '$app/forms'
 	import type { SubmitFunction } from '@sveltejs/kit'
@@ -41,10 +43,15 @@
 			await update()
 		}
 	let live = $state<TimelineEntry[]>([])
-	const posts = $derived([...data.thread, ...live])
+	let edited = $state<Record<string, TimelineEntry>>({})
+	const pageIds = $derived(new Set(data.thread.map((p) => p.id)))
+	const posts = $derived([...data.thread, ...live].map((p) => edited[p.id] ?? p))
 
 	function onPost(entry: TimelineEntry) {
-		if (keepEvent(entry, { kind: 'thread', rootId: data.rootId }) && !posts.some((p) => p.id === entry.id)) live = [...live, entry]
+		if (!keepEvent(entry, { kind: 'thread', rootId: data.rootId })) return
+		const r = mergeIncoming(live, edited, entry, pageIds)
+		live = r.live
+		edited = r.edited
 	}
 
 	// The reading view is the TREE: the root card, then every reply nested
@@ -88,10 +95,14 @@
 					<a class="handle" href="/u/{root.author.handle}">@{root.author.handle}</a>
 					<span class="kind">{root.source}</span>
 					<a class="permalink" href="/post/{root.id}"><time datetime={root.publishedAt}>{root.publishedAt.slice(0, 10)}</time></a>
+					<EditedMarker post={root} />
 				</div>
 				{#if root.title}<h2 class="title">{root.title}</h2>{/if}
 				<PostBody post={root} />
 				{#if root.source === 'remote' && root.url}<a class="source" href={root.url} rel="noreferrer">source</a>{/if}
+				{#if root.source === 'local' && data.me?.user.id === root.author.id}
+					<a class="edit" href="/post/{root.id}/edit">Edit</a>
+				{/if}
 				<ReplyTree thread={posts} parentId={root.id} openAll={true} highlightId={data.postId} />
 			</li>
 		{:else}

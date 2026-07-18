@@ -405,6 +405,21 @@ button:hover {
 	font-size: 0.875rem;
 }
 
+.edited {
+	font-size: 0.8125rem;
+	color: var(--color-secondary);
+	text-decoration: none;
+}
+
+.edited:hover {
+	color: var(--color-accent);
+	text-decoration: underline;
+}
+
+.edit {
+	font-size: 0.875rem;
+}
+
 .post .title {
 	font-size: 1.25rem;
 	margin-top: var(--space-sm);
