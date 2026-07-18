@@ -116,6 +116,17 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
 
   app.get('/admin/status', authed, requireAdmin(), (c) => c.json({ ok: true, adminEmails: [...adminEmails] }))
 
+  app.get('/admin/feeds', authed, requireAdmin(), async (c) => {
+    const feeds = await service.listRemoteUsers()
+    return c.json({ feeds: feeds.map((u) => ({ handle: u.handle, displayName: u.displayName, feedUrl: u.feedUrl })) })
+  })
+
+  app.delete('/users/:handle', adminOrToken(token, deps.auth, deps.users, adminEmails), async (c) => {
+    const result = await service.removeRemoteFeed(c.req.param('handle') ?? '')
+    if ('error' in result) return c.json({ error: result.error === 'unknown' ? 'unknown feed' : 'not a remote feed' }, result.error === 'unknown' ? 404 : 409)
+    return c.json({ ok: true }, 200)
+  })
+
   app.patch('/me', authed, async (c) => {
     const body = await readJsonBody(c)
     if (!body) return c.json({ error: 'body invalid' }, 400)

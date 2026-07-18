@@ -119,6 +119,13 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
     listRemoteUsers() {
       return repo.listRemoteUsers()
     },
+    async removeRemoteFeed(handle: string): Promise<{ ok: true } | { error: 'unknown' | 'local' }> {
+      const user = await repo.getUserByHandle(normalizeHandle(handle))
+      if (!user) return { error: 'unknown' }
+      if (user.kind !== 'remote') return { error: 'local' }
+      repo.deleteUserCascade(user.id)
+      return { ok: true }
+    },
   }
 }
 
