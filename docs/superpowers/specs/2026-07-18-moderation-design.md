@@ -44,11 +44,16 @@ SP3 does not reverse that boundary, it adds a separate local-account path.
 
 #### `DELETE /admin/users/:handle` — delete a local account
 
-Deletes a **local** account and everything it owns via a new
-`repo.deleteLocalAccount(user)` (or `service.deleteLocalAccount(handle)`):
-1. `deleteUserCascade(user.id)` — posts, follows, push-subscriptions, `users` row.
-2. Remove the better-auth rows for the linked `auth_user_id` — `session`,
-   `account`, `user` — mirroring `sweepAnonymousUsers`'s teardown exactly.
+Deletes a **local** account and everything it owns via
+**`service.deleteLocalAccount(handle)`** — the service owns the lookup + local-kind
+check + orchestration, mirroring `removeRemoteFeed`'s shape (no new repo-level
+wrapper). It calls two repo primitives:
+1. `deleteUserCascade(user.id)` (existing) — posts, follows, push-subscriptions,
+   `users` row.
+2. **`deleteAuthRows(authUserId)`** — a small repo method **extracted from
+   `sweepAnonymousUsers`** (which currently inlines the `session`/`account`/`user`
+   deletes) so the better-auth teardown lives in one place, reused by both the
+   sweep and this path. (A local account always has an `auth_user_id`; skip if null.)
 
 - **404** if the handle is unknown.
 - **409** (`{ error: 'not a local account' }`) if the handle resolves to a
@@ -66,7 +71,9 @@ Deletes a **local** account and everything it owns via a new
 
 #### `DELETE /admin/posts/:id` — delete a single local post
 
-Deletes one **local** post via a new `repo.deletePost(id)`.
+Deletes one **local** post via **`service.deletePost(id)`** (lookup + local-kind
+check + discriminated result, same shape as `removeRemoteFeed`), calling a new thin
+`repo.deletePost(id)` primitive.
 - **200** `{ ok: true }` on success.
 - **404** if the id is unknown.
 - **409** (`{ error: 'not a local post' }`) if the id resolves to a **remote**
@@ -133,3 +140,20 @@ buttons are clearly labeled and confirmation-guarded; no `{@html}` introduced.
 **Web:** the `/admin/users` delete action is admin-gated and calls the right core
 endpoint with the forwarded session; the post "Remove" affordance renders only for
 an admin on a local post; both actions `fail()` gracefully on a core error.
+
+## Revisions
+
+**Rev 1 (2026-07-18)** — folded a ponytail review of this spec (2 cuts accepted):
+- **No `repo.deleteLocalAccount` wrapper** — `service.deleteLocalAccount(handle)`
+  owns lookup + kind-check + orchestration (mirroring `removeRemoteFeed`); the repo
+  stays primitives-only. Same for `service.deletePost(id)` over `repo.deletePost(id)`.
+- **Extract `repo.deleteAuthRows(authUserId)`** from `sweepAnonymousUsers`'s inline
+  `session`/`account`/`user` teardown, reused by both the sweep and local-account
+  deletion — one place, not a re-typed block.
+
+Reviewer confirmed the rest lean: the two separate endpoints are justified (SP2's
+`DELETE /users/:handle` is ops-token-eligible + remote-only by design — folding local
+deletion in would branch permitted-target on auth-mechanism), `repo.deletePost` is
+genuinely new + minimal, the web "Remove" affordance reuses SP4's already-plumbed
+`data.me.isAdmin` + the existing `entry.source` field (no new fetch), and the
+`confirm()` + no-JS fallback is proportionate for the app's first irreversible action.
