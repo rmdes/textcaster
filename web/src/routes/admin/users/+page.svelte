@@ -6,6 +6,10 @@
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 	}
+
+	function verified(v: boolean | null): string {
+		return v === null ? '—' : v ? 'Yes' : 'No'
+	}
 </script>
 
 <svelte:head><title>Admin — Users — Textcaster</title></svelte:head>
@@ -15,66 +19,86 @@
 {#if data.users.length === 0}
 	<p class="subnav">No users yet.</p>
 {:else}
-	<div class="table-scroll">
-		<table>
-			<caption class="visually-hidden">Registered local accounts and remote feeds on this instance</caption>
-			<thead>
-				<tr>
-					<th scope="col">Handle</th>
-					<th scope="col">Display name</th>
-					<th scope="col">Kind</th>
-					<th scope="col">Verified</th>
-					<th scope="col">Joined</th>
-					<th scope="col">Feed URL</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.users as u (u.handle)}
-					<tr>
-						<td>@{u.handle}</td>
-						<td>{u.displayName}</td>
-						<td><span class="badge-kind">{u.kind}</span></td>
-						<td>{u.emailVerified === null ? '—' : u.emailVerified ? 'Yes' : 'No'}</td>
-						<td>{formatDate(u.createdAt)}</td>
-						<td class="feed-url">{u.feedUrl ?? '—'}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<ul class="user-list">
+		{#each data.users as u (u.handle)}
+			<li>
+				<div class="user-head">
+					<span class="user-handle">@{u.handle}</span>
+					<span class="badge-kind">{u.kind}</span>
+				</div>
+				<dl class="user-meta">
+					<div><dt>Name</dt> <dd>{u.displayName}</dd></div>
+					<div><dt>Verified</dt> <dd>{verified(u.emailVerified)}</dd></div>
+					<div><dt>Joined</dt> <dd>{formatDate(u.createdAt)}</dd></div>
+					{#if u.feedUrl}
+						<div class="user-feed"><dt>Feed</dt> <dd>{u.feedUrl}</dd></div>
+					{/if}
+				</dl>
+			</li>
+		{/each}
+	</ul>
 {/if}
 
 <style>
-	/* Native horizontal scroll rather than a JS-driven card layout —
-	   the table is narrow enough (6 columns) that this only kicks in
-	   on small phones. */
-	.table-scroll {
-		overflow-x: auto;
+	/* Card-per-user, not a table: the admin column is a fixed 42rem (`.lens`),
+	   too narrow for 6 columns — cards reflow instead of forcing a scrollbar. */
+	.user-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-sm);
 	}
 
-	table {
-		width: 100%;
-		border-collapse: collapse;
-		white-space: nowrap;
+	.user-list li {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: var(--space-md);
 	}
 
-	th,
-	td {
-		text-align: left;
-		padding: var(--space-sm) var(--space-md);
-		border-bottom: 1px solid var(--color-border);
+	.user-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-sm);
+		margin-bottom: var(--space-sm);
 	}
 
-	th {
-		font-size: 0.75rem;
+	.user-handle {
 		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		overflow-wrap: anywhere;
+	}
+
+	/* Label/value pairs that flow inline and wrap; the feed URL takes its own row. */
+	.user-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-xs) var(--space-lg);
+		margin: 0;
+		font-size: 0.8125rem;
+	}
+
+	.user-meta > div {
+		display: flex;
+		gap: var(--space-xs);
+		min-width: 0;
+	}
+
+	.user-meta dt {
 		color: var(--color-secondary);
 	}
 
-	.feed-url {
+	.user-meta dd {
+		margin: 0;
+	}
+
+	.user-feed {
+		flex-basis: 100%;
+	}
+
+	.user-feed dd {
 		overflow-wrap: anywhere;
-		white-space: normal;
 	}
 </style>
