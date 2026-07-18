@@ -95,7 +95,7 @@ The `/admin` area grows from one page into a small section:
   `Feeds` · `Users`) + `{@render children()}`.
 - **`web/src/routes/admin/+page.server.ts` + `+page.svelte`** — the **new**
   overview dashboard (loads `GET /admin/overview`, renders the counts +
-  federation/mail/admin/poll status).
+  federation/mail/admin status).
 - **`web/src/routes/admin/feeds/+page.server.ts` + `+page.svelte`** — the
   **existing SP2 feed-management page, moved here unchanged** (its `add`/`remove`
   actions + list). Its own load no longer needs the `isAdmin` gate (the layout
@@ -119,8 +119,8 @@ no forms — everything is read-only; the moved feeds page keeps its SP2 forms).
 ## Error handling
 
 - `/admin/overview` + `/admin/users`: `authed` + `requireAdmin()` → non-admin
-  session (registered or anon) 403, no session 401 — matching SP2 rev 2 and
-  `/admin/status`.
+  session (registered or anon) 403, no session 401 — the same `requireAdmin`
+  semantics SP2 rev 2 established.
 - Web layout load: non-admin / no `me` → `throw error(404)` (hide existence, no
   redirect leak — same as SP2's page gate).
 - Empty instance (no users/feeds/posts): counts are 0, `users` is `[]` — pages
