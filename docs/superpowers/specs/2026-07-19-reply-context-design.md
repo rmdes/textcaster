@@ -70,7 +70,6 @@ function parseInReplyTo(irt: unknown): {
       cite.content && typeof cite.content === 'object' && typeof (cite.content as { text?: unknown }).text === 'string'
         ? (cite.content as { text: string }).text
         : typeof cite.content === 'string' ? cite.content
-        : typeof cite.name === 'string' ? cite.name
         : null
     return { ref, contextAuthor: author, contextSnippet: truncate(rawSnippet, 200) }
   }
@@ -78,8 +77,9 @@ function parseInReplyTo(irt: unknown): {
 }
 ```
 
-- `truncate(s, n)`: trim, cut to `n` chars on a word boundary if possible, append
-  `…` when cut; `null`-through. Small local helper (no dep).
+- `truncate(s, n)`: `null`-safe hard cut — `const t = s?.trim(); if (!t) return
+  null; return t.length <= n ? t : t.slice(0, n).trimEnd() + '…'`. No word-boundary
+  logic (a muted, already-untrusted line); empty/whitespace → `null`.
 - The three values ride on **`ParsedItem`** (new fields `replyContextAuthor`,
   `replyContextSnippet`) → **`toParsedItem`** (two new optional params, defaulting
   `null`, same as `contentMarkdown`) → the `Post` built in `ingest.ts`.
@@ -137,8 +137,7 @@ In reply to {author}: “{snippet}” ↗
   invariant (`PostBody.svelte`) intact. This is the security boundary — do not
   interpolate them into any HTML string or `{@html}`.
 - `{snippet}` is wrapped in typographic quotes (`“…”`); the stored value is
-  already truncated (§1), so the visible text is the stored text. Add
-  `title={snippet}` so the untruncated-enough value is available on hover.
+  already truncated (§1), so the visible text is the stored text.
 - When context is **absent** (a string-form reply, or an h-cite with neither
   author nor snippet), fall back to today's bare "in reply to ↗" link — no
   regression.
@@ -156,9 +155,11 @@ plain-CSS SvelteKit):
 - Accessibility: real semantic `<a>` for the `↗`, focus ring intact, the `↗`
   glyph plus `rel="noreferrer"` signals an external destination (matches the
   existing `.source` links).
-- A small scoped class (e.g. `.reply-context`) or reuse of `.subnav`/`.source`;
-  minimal new CSS. Built consulting `svelte-runes` + `sveltekit-data-flow`
-  (the fields arrive via the existing page `data`; no new load, no new state).
+- **Reuse the existing secondary-metadata classes** — `.source` on the timeline,
+  `.subnav` on post-detail (both already `--color-secondary`/0.875rem in the two
+  target files); **no new CSS class.** Built consulting `svelte-runes` +
+  `sveltekit-data-flow` (the fields arrive via the existing page `data`; no new
+  load, no new state).
 
 ### 5. Serialization (Hono) — no route change
 
@@ -220,7 +221,9 @@ The phrasing "In reply to {author}: '…'" is naturally attributive (it is what
   is the orphan-bug regression: before the fix the ref is `null`).
 - A **string** `in-reply-to` → `inReplyTo` = the string, context both `null`
   (no regression to the existing path).
-- An h-cite with **no `url`** (author/name only) → ref `null`, context populated.
+- An h-cite with **no `url`** → ref `null`, `author` still captured; `snippet`
+  populated only when the cite carries `content` (a name/title alone is not a
+  snippet).
 - `truncate` cuts a long snippet with `…` and passes short/empty/`null` through.
 
 **Core — `ingest.ts` (threading):**
@@ -243,3 +246,23 @@ The phrasing "In reply to {author}: '…'" is naturally attributive (it is what
 - Verifying the claimed context against the parent's real feed (that is the
   separate "Verified bylines" idea — a different trust posture).
 - The RSS/Atom reply path (already string-based, unaffected).
+
+## Revisions
+
+**Rev 1 (2026-07-19)** — folded a ponytail review of this spec (4 cuts, ~−12
+lines):
+- **No `title={snippet}` hover** — the visible text is already the stored text; a
+  tooltip repeating it is pure gold-plating.
+- **Reuse `.source`/`.subnav`**, no new CSS class — both already carry the exact
+  `--color-secondary`/0.875rem styling in the two target files (the codebase
+  actively consolidates onto shared classes).
+- **Dropped the `cite.name`→snippet fallback** — it conflated a parent *title*
+  with a body *snippet*; with no `content` the line degrades to author-only,
+  staying true to the approved content-snippet richness.
+- **`truncate` is a hard cut**, not word-boundary — grammatical politeness isn't
+  worth the code on a muted, already-untrusted line.
+
+Reviewer confirmed the rest lean: the two nullable columns (correctly not a JSON
+blob, correctly not reusing `source_name`), `parseInReplyTo`'s branches (each a
+real `mf2tojf2` shape), and the two extra positional params on `toParsedItem`
+(matches the existing `contentMarkdown`/`updatedAt` precedent).
