@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { bodyLimit } from 'hono/body-limit'
-import { sessionAuth, registeredOnly, sessionOrToken, requireAdmin } from './auth.ts'
+import { sessionAuth, registeredOnly, sessionOrToken, requireAdmin, adminOrToken } from './auth.ts'
 import type { UserDirectory } from './auth.ts'
 import { parseCursor, formatCursor } from './cursor.ts'
 import { DomainError, HandleTakenError } from '../domain/types.ts'
@@ -59,6 +59,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
   const mailEnabled = deps.mailEnabled ?? true
   const adminEmails = deps.adminEmails ?? new Set<string>()
   const app = new Hono()
+  const authed = sessionAuth(deps.auth, deps.users, adminEmails)
 
   app.onError((err, c) => {
     if (err instanceof DomainError) return c.json({ error: err.message }, 400)
@@ -79,7 +80,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
 
   app.on(['GET', 'POST'], '/api/auth/*', (c) => deps.auth.handler(c.req.raw))
 
-  app.post('/users', sessionOrToken(token, deps.auth, deps.users), async (c) => {
+  app.post('/users', adminOrToken(token, deps.auth, deps.users, adminEmails), async (c) => {
     const body = await readJsonBody(c)
     if (!body) return c.json({ error: 'body invalid' }, 400)
     const { handle, displayName, feedUrl } = body
@@ -91,7 +92,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.json({ user }, 201)
   })
 
-  app.post('/posts', sessionAuth(deps.auth, deps.users), async (c) => {
+  app.post('/posts', authed, async (c) => {
     const body = await readJsonBody(c)
     if (!body) return c.json({ error: 'body invalid' }, 400)
     const { content, inReplyTo } = body
@@ -111,11 +112,11 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return service.getUserByHandle(handleRaw.toLowerCase())
   }
 
-  app.get('/me', sessionAuth(deps.auth, deps.users, adminEmails), (c) => c.json({ user: c.get('coreUser'), isAnonymous: c.get('sessionIsAnonymous'), isAdmin: c.get('isAdmin') }))
+  app.get('/me', authed, (c) => c.json({ user: c.get('coreUser'), isAnonymous: c.get('sessionIsAnonymous'), isAdmin: c.get('isAdmin') }))
 
-  app.get('/admin/status', sessionAuth(deps.auth, deps.users, adminEmails), requireAdmin(), (c) => c.json({ ok: true, adminEmails: [...adminEmails] }))
+  app.get('/admin/status', authed, requireAdmin(), (c) => c.json({ ok: true, adminEmails: [...adminEmails] }))
 
-  app.patch('/me', sessionAuth(deps.auth, deps.users), async (c) => {
+  app.patch('/me', authed, async (c) => {
     const body = await readJsonBody(c)
     if (!body) return c.json({ error: 'body invalid' }, 400)
     const { handle, displayName } = body
@@ -134,7 +135,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     }
   })
 
-  app.post('/me/follows', sessionAuth(deps.auth, deps.users), async (c) => {
+  app.post('/me/follows', authed, async (c) => {
     const body = await readJsonBody(c)
     if (!body || !isString(body.handle, 1, 64)) return c.json({ error: 'handle invalid' }, 400)
     const target = await resolveUser(body.handle)
@@ -143,7 +144,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.json({ ok: true }, 200)
   })
 
-  app.delete('/me/follows/:target', sessionAuth(deps.auth, deps.users), async (c) => {
+  app.delete('/me/follows/:target', authed, async (c) => {
     const target = await resolveUser(c.req.param('target') ?? '')
     if (!target) return c.json({ error: 'unknown user' }, 404)
     await service.removeFollow(c.get('coreUser').id, target.id)
@@ -200,7 +201,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     return c.body(opml, 200, { 'content-type': 'text/xml; charset=utf-8' })
   })
 
-  app.post('/me/follows/opml', sessionAuth(deps.auth, deps.users), registeredOnly(), bodyLimit({ maxSize: 1024 * 1024, onError: rejectOversized }), async (c) => {
+  app.post('/me/follows/opml', authed, registeredOnly(), bodyLimit({ maxSize: 1024 * 1024, onError: rejectOversized }), async (c) => {
     const follower = c.get('coreUser')
     const body = await c.req.text()
     const result = await importFollowingOpml(

@@ -97,3 +97,21 @@ export function sessionOrToken(token: string, auth: Auth, users: UserDirectory, 
     return viaSession(c, (() => mustBeRegistered(c, next)) as unknown as Next)
   }
 }
+
+// Admin-gated writes (feed add/remove): ops bearer token OR an admin session.
+// Spec (feed-management design, "authz"): registered non-admin session → 403;
+// anonymous session → 401 (an anon guest carries no provable identity, so it
+// counts as unauthenticated here, unlike registeredOnly's write routes where
+// anon is a valid — just non-admin — author); no session → 401.
+export function adminOrToken(token: string, auth: Auth, users: UserDirectory, adminEmails: ReadonlySet<string> = new Set()): MiddlewareHandler {
+  const viaSession = sessionAuth(auth, users, adminEmails)
+  const mustBeAdmin = requireAdmin()
+  return async (c, next) => {
+    const header = c.req.header('authorization')
+    if (header !== undefined) return bearerAuth(token)(c, next)
+    return viaSession(c, (() => {
+      if (c.get('sessionIsAnonymous')) return c.json({ error: 'authentication required' }, 401)
+      return mustBeAdmin(c, next)
+    }) as unknown as Next)
+  }
+}

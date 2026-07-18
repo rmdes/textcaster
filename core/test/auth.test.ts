@@ -125,7 +125,7 @@ test('login while anonymous abandons the guest core user (orphaned, reclaimed in
   expect(guestAfter?.authUserId).toBe(anonAuthId) // still points at the now-deleted anon auth row: orphaned
 })
 
-test('user actions 401 without a session; 403 gates for anonymous', async () => {
+test('user actions 401 without a session; POST /users is admin-gated (feed-management task 2)', async () => {
   const { app, repo } = await makeApp()
   expect((await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"content":"x"}' })).status).toBe(401)
   expect((await app.request('/me')).status).toBe(401)
@@ -138,14 +138,14 @@ test('user actions 401 without a session; 403 gates for anonymous', async () => 
     headers: { 'content-type': 'application/json', cookie: anon },
     body: JSON.stringify({ handle: 'feed1', displayName: 'Feed', feedUrl: 'http://e.example/f.xml' }),
   })
-  expect(addFeed.status).toBe(403) // anonymous cannot create feeds
+  expect(addFeed.status).toBe(401) // adminOrToken: anonymous carries no provable identity — unauthenticated
   const reg = await registeredSession(app, 'r@test.example', repo)
   const addFeed2 = await app.request('/users', {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie: reg },
     body: JSON.stringify({ handle: 'feed1', displayName: 'Feed', feedUrl: 'http://e.example/f.xml' }),
   })
-  expect(addFeed2.status).toBe(201)
+  expect(addFeed2.status).toBe(403) // registered but not admin (no adminEmails configured in this app)
 })
 
 test('PATCH /me renames; posts and follows survive; 409 on conflict', async () => {
