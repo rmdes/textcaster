@@ -4,7 +4,7 @@ set -eu
 # ── Helper functions (also sourced by the test with TC_SOURCE_ONLY=1) ──
 tc_ensure_secret() { # $1 = file; prints the secret, generating once.
   local f="$1"
-  [ -f "$f" ] || { umask 077; openssl rand -hex 32 > "$f"; }
+  [ -f "$f" ] || ( umask 077; openssl rand -hex 32 > "$f" )
   cat "$f"
 }
 
@@ -21,8 +21,10 @@ echo "==> Textcaster: preparing /app/data"
 mkdir -p /app/data/config
 
 # Secrets: generate once, persist, NEVER regenerate (would drop all sessions).
-export TEXTCASTER_AUTH_SECRET="$(tc_ensure_secret /app/data/config/auth_secret)"
-export TEXTCASTER_TOKEN="$(tc_ensure_secret /app/data/config/ops_token)"
+TEXTCASTER_AUTH_SECRET=$(tc_ensure_secret /app/data/config/auth_secret)
+export TEXTCASTER_AUTH_SECRET
+TEXTCASTER_TOKEN=$(tc_ensure_secret /app/data/config/ops_token)
+export TEXTCASTER_TOKEN
 
 # Map Cloudron env → Textcaster/core.
 export TEXTCASTER_DB="/app/data/textcaster.db"
@@ -33,7 +35,8 @@ export TEXTCASTER_RSSCLOUD="on"
 export TEXTCASTER_PUSH_IN="on"
 export TEXTCASTER_PORT="8787"
 if [ -n "${CLOUDRON_MAIL_SMTP_SERVER:-}" ]; then
-  export TEXTCASTER_SMTP_URL="$(tc_smtp_url "$CLOUDRON_MAIL_SMTP_SERVER" "$CLOUDRON_MAIL_SMTP_PORT" "$CLOUDRON_MAIL_SMTP_USERNAME" "$CLOUDRON_MAIL_SMTP_PASSWORD")"
+  TEXTCASTER_SMTP_URL=$(tc_smtp_url "$CLOUDRON_MAIL_SMTP_SERVER" "$CLOUDRON_MAIL_SMTP_PORT" "$CLOUDRON_MAIL_SMTP_USERNAME" "$CLOUDRON_MAIL_SMTP_PASSWORD")
+  export TEXTCASTER_SMTP_URL
   export TEXTCASTER_MAIL_FROM="${CLOUDRON_MAIL_FROM}"
 fi
 
@@ -51,7 +54,7 @@ chown -R cloudron:cloudron /app/data
 cp /app/pkg/nginx.conf /run/textcaster-nginx.conf
 mkdir -p /run/nginx-body /run/nginx-proxy
 echo "==> Starting nginx on :8000"
-nginx -c /run/textcaster-nginx.conf
+nginx -c /run/textcaster-nginx.conf &
 
 # core (migrations run automatically at boot) — write diagnostics under /tmp.
 echo "==> Starting core on :8787"
