@@ -231,6 +231,10 @@ export class SqliteRepository implements Repository {
     return r ? rowToPost(r) : undefined
   }
 
+  async deletePost(id: string): Promise<void> {
+    await this.db.deleteFrom('posts').where('id', '=', id).execute()
+  }
+
   async getPostsByAuthor(authorId: string, limit: number): Promise<Post[]> {
     const rows = await this.db.selectFrom('posts').selectAll().where('author_id', '=', authorId).orderBy('published_at', 'desc').orderBy('id', 'desc').limit(limit).execute()
     return rows.map(rowToPost)

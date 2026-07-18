@@ -57,3 +57,36 @@ test('DELETE /admin/users/:handle gate: non-admin 403, anon 403, no session 401'
   expect((await app.request('/admin/users/x', { method: 'DELETE', headers: { cookie: await anonSession(app) } })).status).toBe(403)
   expect((await app.request('/admin/users/x', { method: 'DELETE' })).status).toBe(401)
 })
+
+test('deletePost removes a local post; 409 remote, 404 unknown', async () => {
+  const { app, repo, service } = await makeApp()
+  const cookie = await registeredSession(app, 'a@x.test', repo)
+  await app.request('/me', { headers: { cookie } })
+  const created = await (await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ content: 'nuke me' }) })).json()
+  const postId = created.post.id
+
+  expect(await service.deletePost(postId)).toEqual({ ok: true })
+  expect(await repo.getPost(postId)).toBeUndefined()
+
+  // a remote post → error remote
+  const remote = await repo.createRemoteUser({ handle: 'rf', displayName: 'RF', feedUrl: 'https://e/f.xml' })
+  await repo.insertPost({ id: 'rp', authorId: remote.id, source: 'remote', guid: 'rg', title: null, content: 'x', url: 'https://e/p', publishedAt: '2026-07-18T00:00:00Z', createdAt: '2026-07-18T00:00:00Z', inReplyTo: null, inReplyToPostId: null, threadRootId: null })
+  expect(await service.deletePost('rp')).toEqual({ error: 'remote' })
+  expect(await service.deletePost('ghost')).toEqual({ error: 'unknown' })
+})
+
+test('DELETE /admin/posts/:id: 200 local, 409 remote, 404 unknown; gate matrix', async () => {
+  const { app, repo } = await makeApp()
+  const cookie = await registeredSession(app, 'a@x.test', repo)
+  await app.request('/me', { headers: { cookie } })
+  const created = await (await app.request('/posts', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ content: 'p' }) })).json()
+  const admin = await registeredSession(app, 'boss@x.test', repo)
+  expect((await app.request(`/admin/posts/${created.post.id}`, { method: 'DELETE', headers: { cookie: admin } })).status).toBe(200)
+  const remote = await repo.createRemoteUser({ handle: 'rf2', displayName: 'RF', feedUrl: 'https://e/f.xml' })
+  await repo.insertPost({ id: 'rp2', authorId: remote.id, source: 'remote', guid: 'rg2', title: null, content: 'x', url: 'https://e/p2', publishedAt: '2026-07-18T00:00:00Z', createdAt: '2026-07-18T00:00:00Z', inReplyTo: null, inReplyToPostId: null, threadRootId: null })
+  const admin2 = await registeredSession(app, 'boss@x.test', repo)
+  expect((await app.request('/admin/posts/rp2', { method: 'DELETE', headers: { cookie: admin2 } })).status).toBe(409)
+  expect((await app.request('/admin/posts/ghost', { method: 'DELETE', headers: { cookie: admin2 } })).status).toBe(404)
+  expect((await app.request('/admin/posts/rp2', { method: 'DELETE', headers: { cookie: await anonSession(app) } })).status).toBe(403)
+  expect((await app.request('/admin/posts/rp2', { method: 'DELETE' })).status).toBe(401)
+})

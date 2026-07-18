@@ -146,6 +146,13 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
       if (user.authUserId) repo.deleteAuthRows(user.authUserId)
       return { ok: true }
     },
+    async deletePost(id: string): Promise<{ ok: true } | { error: 'unknown' | 'remote' }> {
+      const post = await repo.getPost(id)
+      if (!post) return { error: 'unknown' }
+      if (post.source !== 'local') return { error: 'remote' }
+      await repo.deletePost(id)
+      return { ok: true }
+    },
   }
 }
 
