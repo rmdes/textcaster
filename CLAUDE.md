@@ -64,8 +64,7 @@ the ladder (YAGNI → reuse → stdlib → native → one line → minimum) gove
 code written here. Use the sub-skills systematically:
 
 - `/ponytail-review` — run on the diff after finishing any task that changed
-  code, before committing. A Stop hook nudges this automatically when the
-  working tree changed since the last review; act on the nudge, don't dismiss it.
+  code, before committing.
 - `/ponytail-debt` — run before planning a debt batch; it harvests every
   `ponytail:` shortcut comment into a ledger. Mark every deliberate
   simplification with a `ponytail:` comment so this stays accurate.
