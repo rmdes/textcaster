@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest'
-import { getTimeline, createPost, addRemoteUser, getMe, listAdminFeeds, removeRemoteFeed } from './api.ts'
+import { getTimeline, createPost, addRemoteUser, getMe, listAdminFeeds, removeRemoteFeed, getAdminOverview, listAdminUsers } from './api.ts'
 
 const entry = {
 	id: 'p1',
@@ -88,4 +88,20 @@ test('removeRemoteFeed DELETEs the url-encoded handle', async () => {
 test('removeRemoteFeed surfaces the core error message', async () => {
 	const f = vi.fn(async () => new Response(JSON.stringify({ error: 'not a remote feed' }), { status: 409 }))
 	await expect(removeRemoteFeed(f as unknown as typeof fetch, 'x')).rejects.toThrow('not a remote feed')
+})
+
+test('getAdminOverview returns the snapshot and GETs /admin/overview', async () => {
+	const snap = { counts: { registeredUsers: 1, guests: 0, remoteFeeds: 2, posts: 3 }, federation: { websub: 'self', rssCloud: true, pushIn: true, publicUrl: 'https://x' }, mailEnabled: true, adminEmails: ['a@x'] }
+	const f = vi.fn(async () => new Response(JSON.stringify(snap), { status: 200 }))
+	expect((await getAdminOverview(f as unknown as typeof fetch)).counts.remoteFeeds).toBe(2)
+	expect(f).toHaveBeenCalledWith('http://localhost:8787/admin/overview')
+})
+test('listAdminUsers returns the users array', async () => {
+	const f = vi.fn(async () => new Response(JSON.stringify({ users: [{ handle: 'a', displayName: 'A', kind: 'local', emailVerified: true, createdAt: '', feedUrl: null }] }), { status: 200 }))
+	expect((await listAdminUsers(f as unknown as typeof fetch))[0].handle).toBe('a')
+	expect(f).toHaveBeenCalledWith('http://localhost:8787/admin/users')
+})
+test('getAdminOverview surfaces the core error message', async () => {
+	const f = vi.fn(async () => new Response(JSON.stringify({ error: 'admin only' }), { status: 403 }))
+	await expect(getAdminOverview(f as unknown as typeof fetch)).rejects.toThrow('admin only')
 })

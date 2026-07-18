@@ -134,3 +134,26 @@ export async function removeRemoteFeed(f: typeof fetch, handle: string): Promise
 	const res = await f(`${base()}/users/${encodeURIComponent(handle)}`, { method: 'DELETE' })
 	if (!res.ok) throw new Error(await errorMessage(res, 'removeRemoteFeed failed'))
 }
+
+export async function getAdminOverview(f: typeof fetch): Promise<{
+	counts: { registeredUsers: number; guests: number; remoteFeeds: number; posts: number }
+	federation: { websub: string; rssCloud: boolean; pushIn: boolean; publicUrl: string | null }
+	mailEnabled: boolean
+	adminEmails: string[]
+}> {
+	const res = await f(`${base()}/admin/overview`)
+	if (!res.ok) throw new Error(await errorMessage(res, 'getAdminOverview failed'))
+	return await res.json()
+}
+
+export async function listAdminUsers(
+	f: typeof fetch
+): Promise<Array<{ handle: string; displayName: string; kind: string; emailVerified: boolean | null; createdAt: string; feedUrl: string | null }>> {
+	const res = await f(`${base()}/admin/users`)
+	if (!res.ok) throw new Error(await errorMessage(res, 'listAdminUsers failed'))
+	return (
+		(await res.json()) as {
+			users: Array<{ handle: string; displayName: string; kind: string; emailVerified: boolean | null; createdAt: string; feedUrl: string | null }>
+		}
+	).users
+}

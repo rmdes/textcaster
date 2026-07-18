@@ -1,73 +1,137 @@
 <script lang="ts">
-	import type { PageData, ActionData } from './$types'
-	import ThemeToggle from '$lib/ThemeToggle.svelte'
-	import { enhance } from '$app/forms'
+	import type { PageData } from './$types'
 
-	let { data, form }: { data: PageData; form: ActionData } = $props()
+	let { data }: { data: PageData } = $props()
 </script>
 
 <svelte:head><title>Admin — Textcaster</title></svelte:head>
 
-<div class="lens">
-	<header class="masthead">
-		<a href="/">Textcaster</a>
-		<ThemeToggle />
-	</header>
+<h2>Overview</h2>
 
-	<div>
-		<h1>Admin</h1>
-		<p class="subnav"><a href="/">back to timeline</a></p>
+<dl class="stat-grid">
+	<div class="stat-card">
+		<dt>Registered users</dt>
+		<dd>{data.overview.counts.registeredUsers}</dd>
 	</div>
+	<div class="stat-card">
+		<dt>Guests</dt>
+		<dd>{data.overview.counts.guests}</dd>
+	</div>
+	<div class="stat-card">
+		<dt>Remote feeds</dt>
+		<dd>{data.overview.counts.remoteFeeds}</dd>
+	</div>
+	<div class="stat-card">
+		<dt>Posts</dt>
+		<dd>{data.overview.counts.posts}</dd>
+	</div>
+</dl>
 
-	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
+<section aria-labelledby="admin-federation-heading">
+	<h3 id="admin-federation-heading">Federation</h3>
+	<ul class="status-list">
+		<li>
+			<span class="status-label">WebSub</span>
+			<span class="badge-kind">{data.overview.federation.websub}</span>
+		</li>
+		<li>
+			<span class="status-label">rssCloud</span>
+			<span class="status-flag" class:on={data.overview.federation.rssCloud}>{data.overview.federation.rssCloud ? 'on' : 'off'}</span>
+		</li>
+		<li>
+			<span class="status-label">Push-in</span>
+			<span class="status-flag" class:on={data.overview.federation.pushIn}>{data.overview.federation.pushIn ? 'on' : 'off'}</span>
+		</li>
+		<li>
+			<span class="status-label">Public URL</span>
+			<span class="subnav">{data.overview.federation.publicUrl ?? 'not set'}</span>
+		</li>
+		<li>
+			<span class="status-label">Mail</span>
+			<span class="status-flag" class:on={data.overview.mailEnabled}>{data.overview.mailEnabled ? 'on' : 'off'}</span>
+		</li>
+	</ul>
+</section>
 
-	<section>
-		<h2>Remote feeds</h2>
-		{#if data.feeds.length === 0}
-			<p class="subnav">No remote feeds yet.</p>
-		{:else}
-			<ul class="following-list">
-				{#each data.feeds as feed (feed.handle)}
-					<li>
-						<div class="feed-info">
-							<strong>@{feed.handle}</strong>
-							<span class="subnav feed-url">{feed.feedUrl ?? 'no feed url'}</span>
-						</div>
-						<form method="POST" action="?/remove" class="unfollow-form" use:enhance>
-							<input type="hidden" name="handle" value={feed.handle} />
-							<button aria-label="Remove @{feed.handle}">Remove</button>
-						</form>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+{#if data.overview.adminEmails.length > 0}
+	<section aria-labelledby="admin-emails-heading">
+		<h3 id="admin-emails-heading">Admins</h3>
+		<ul class="following-list">
+			{#each data.overview.adminEmails as email (email)}
+				<li>{email}</li>
+			{/each}
+		</ul>
 	</section>
-
-	<details class="panel" open>
-		<summary>Add remote feed</summary>
-		<form method="POST" action="?/add" class="add-remote" use:enhance>
-			<label class="visually-hidden" for="admin-add-handle">Handle</label>
-			<input id="admin-add-handle" name="handle" placeholder="handle" required />
-			<label class="visually-hidden" for="admin-add-display-name">Display name (optional)</label>
-			<input id="admin-add-display-name" name="displayName" placeholder="display name (optional)" />
-			<label class="visually-hidden" for="admin-add-feed-url">Feed URL</label>
-			<input id="admin-add-feed-url" name="feedUrl" type="url" placeholder="https://their-site.com/feed.xml" required />
-			<button>Add feed</button>
-		</form>
-	</details>
-</div>
+{/if}
 
 <style>
-	/* Feed URLs can run long; the shared .following-list row has no wrap
-	   handling since its usual content (a handle + kind badge) never needs
-	   it — stack + wrap here rather than adding an admin-only case upstream. */
-	.feed-info {
+	.stat-grid {
+		margin: 0;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+		gap: var(--space-md);
+	}
+
+	.stat-card {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 12px;
+		padding: var(--space-md);
+	}
+
+	.stat-card dt {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-secondary);
+	}
+
+	.stat-card dd {
+		margin: var(--space-xs) 0 0;
+		font-family: var(--font-heading);
+		font-size: 2rem;
+		line-height: 1.1;
+	}
+
+	.status-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
+		gap: var(--space-sm);
 	}
-	.feed-url {
-		overflow-wrap: anywhere;
+
+	.status-list li {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-sm);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: var(--space-sm) var(--space-md);
+	}
+
+	.status-label {
+		font-weight: 600;
+	}
+
+	.status-flag {
+		display: inline-block;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 0 var(--space-sm);
+		color: var(--color-secondary);
+	}
+
+	.status-flag.on {
+		color: var(--color-accent);
+		border-color: currentColor;
 	}
 </style>
