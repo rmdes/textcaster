@@ -106,6 +106,7 @@ export function renderRssFeed(user: User, posts: Post[], ctx: FeedContext): stri
         guid: localGuid(p),
         ...(p.url !== null ? { link: p.url } : {}),
         pubDate: p.publishedAt,
+        ...(p.editedAt ? { atom: { updated: p.editedAt } } : {}),
         ...itemContentFields(p),
       })),
     },
@@ -146,6 +147,7 @@ export function renderFirehoseRss(entries: TimelineEntry[], ctx: FeedContext): s
         pubDate: p.publishedAt,
         // RSS core <source>: the item's author and their personal feed.
         ...(ctx.publicUrl ? { source: { title: p.author.displayName, url: feedUrls(ctx.publicUrl, p.author.handle).xml } } : {}),
+        ...(p.editedAt ? { atom: { updated: p.editedAt } } : {}),
         ...itemContentFields(p),
       })),
     },
@@ -241,6 +243,7 @@ export function renderJsonFeed(user: User, posts: Post[], ctx: FeedContext): str
           : { content_text: p.content }),
         ...(p.url !== null ? { url: p.url } : {}),
         date_published: p.publishedAt,
+        ...(p.editedAt ? { date_modified: p.editedAt } : {}),
       })),
     },
     // lenient: type-level only — see renderRssFeed; generateJsonFeed's JS impl
