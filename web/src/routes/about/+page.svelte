@@ -9,28 +9,27 @@
 </script>
 
 <svelte:head>
-	<title>About — Textcaster</title>
+	<title>About — RSC</title>
 	<meta
 		name="description"
-		content="Textcaster is a feeds-native social timeline: people who post through the instance and people who post from their own site are equal citizens in one live timeline, and whole conversations travel as plain RSS."
+		content="RSC — Really Simple Conversations — is a feeds-native social timeline: people who post through the instance and people who post from their own site are equal citizens in one live timeline, and whole conversations travel as plain RSS."
 	/>
 </svelte:head>
 
 <div class="lens about">
 	<header class="masthead">
-		<a href="/">Textcaster</a>
+		<a href="/">RSC</a>
 		<ThemeToggle />
 	</header>
 
 	<h1>A social timeline built natively on feeds.</h1>
 
 	<p class="lede">
-		Two worlds kept their distance for years: Dave Winer's RSS and Textcasting
-		lineage, and the IndieWeb. Textcaster unifies them — and refuses the purity
-		lines between them. People who post <em>through</em> the instance and people
-		who post from <em>their own website's feed</em> are equal citizens of the
-		same live timeline, and following, replies, and whole conversations travel
-		as plain RSS instead of a proprietary API.
+		RSC — Really Simple Conversations — is a social timeline built natively on
+		open feeds. People who post <em>through</em> the instance and people
+		who post from <em>their own website's feed</em> are equal citizens of the same
+		live timeline, and following, replies, and whole conversations travel as
+		plain RSS instead of a proprietary API.
 	</p>
 
 	<p class="status">Pre-release, but deep — real end to end today, no release cut yet.</p>
@@ -44,7 +43,7 @@
 			channel, never as the place a conversation actually lives.
 		</p>
 		<p>
-			Textcaster's bet is that a conversation can travel over nothing but RSS.
+			RSC's bet is that a conversation can travel over nothing but RSS.
 			A reply is a post; a thread is reconstructed from feeds; a conversation
 			can federate from one instance to another and back again with no extra
 			protocol. If it works over feeds, no single service owns it — and anyone
@@ -85,9 +84,9 @@
 				live, not just polled.
 			</li>
 			<li>
-				<strong>Interop with rss.chat.</strong> Textcaster round-trips Dave
-				Winer's rss.chat: a conversation can federate A→B→A over plain RSS, and
-				our feeds are walkable by his own thread walker unchanged.
+				<strong>Interop with rss.chat.</strong> RSC round-trips rss.chat: a
+				conversation can federate A→B→A over plain RSS, and our feeds are
+				walkable by its thread walker unchanged.
 			</li>
 			<li>
 				<strong>Accounts.</strong> Browse and post as a guest first, then
@@ -112,7 +111,7 @@
 			only thing your browser talks to. The core speaks open standards the rest
 			of the web already understands — RSS, OPML, JSON Feed, WebSub, and
 			rssCloud — so it federates with other sites and instances directly,
-			without anyone adopting a Textcaster-specific protocol.
+			without anyone adopting an RSC-specific protocol.
 		</p>
 		<p>
 			The page you're reading, and every post, is rendered and sanitized
@@ -124,15 +123,15 @@
 	<section>
 		<h2>Who built it — and on whose shoulders</h2>
 		<p>
-			Textcaster is built by <a href="https://github.com/rmdes">Ricardo (rmdes)</a>.
-			The name is itself an attribution. It stands on ideas and standards it did
-			not invent:
+			RSC is built by <a href="https://github.com/rmdes">Ricardo (rmdes)</a>.
+			It stands on ideas and standards it did not invent:
 		</p>
 		<ul class="credits">
 			<li>
-				<strong><a href="https://textcasting.org">Dave Winer & textcasting.org</a></strong>
-				— the Textcasting manifesto, RSS, OPML, rssCloud, and the
-				<a href="https://github.com/scripting/rss.chat">rss.chat</a> idea this reimagines.
+				<strong><a href="https://textcasting.org">Dave Winer &amp; textcasting.org</a></strong>
+				— the Textcasting manifesto, RSS, OPML, rssCloud, and
+				<a href="https://github.com/scripting/rss.chat">rss.chat</a>, whose
+				conversations RSC interops with.
 			</li>
 			<li><strong>The IndieWeb community</strong> — Micropub, Webmention, IndieAuth, and microformats2.</li>
 			<li><strong>JSON Feed</strong> — Manton Reece and Brent Simmons.</li>
@@ -140,9 +139,9 @@
 		</ul>
 		<p>
 			It's open source under the MIT license and made to be self-hosted. The
-			<a href="https://github.com/rmdes/textcaster">source</a>, the
-			<a href="https://github.com/rmdes/textcaster/blob/main/README.md">README</a>, and the
-			<a href="https://github.com/rmdes/textcaster/blob/main/docs/superpowers/specs/2026-07-15-textcaster-design.md">founding design</a>
+			<a href="https://github.com/rmdes/rsc">source</a>, the
+			<a href="https://github.com/rmdes/rsc/blob/main/README.md">README</a>, and the
+			<a href="https://github.com/rmdes/rsc/blob/main/docs/superpowers/specs/2026-07-15-textcaster-design.md">founding design</a>
 			are all public.
 		</p>
 	</section>
