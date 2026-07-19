@@ -125,7 +125,11 @@ These three are where a naive find-replace destroys live state:
   regenerated `package-lock.json`) returns ONLY the allowlist:
   `docs/superpowers/` historical files and their filenames referenced from
   live pages, domain values that legitimately remain (compose/Caddyfile
-  `textcaster.app` hosts, `start.sh` DB path), and this spec.
+  `textcaster.app` hosts, `start.sh` DB path), and this spec. "Textcasting"
+  as the *interop-convention* term (internal identifiers/comments:
+  `listTextcastingPeers`, `source:markdown` marker notes) is NOT renamed —
+  it names the protocol we interop with, like "RSS"; the only user-facing
+  uses are the credit line and About-page credits, which stay by design.
 - Sanitizer twins untouched (`core/src/domain/markdown.ts` /
   `web/src/lib/server/render.ts`) — rename must not brush the XSS gate.
 
