@@ -118,8 +118,12 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
       if (follower.kind !== 'local') throw new DomainError('follower must be a local user')
       await repo.addFollow(follower.id, target.id)
     },
-    removeFollow(followerId: string, targetId: string) {
-      return repo.removeFollow(followerId, targetId)
+    async removeFollow(followerId: string, target: User): Promise<void> {
+      await repo.removeFollow(followerId, target.id)
+      if (target.kind === 'remote' && (target.feedType === 'person' || target.feedType === 'webfeed')
+          && (await repo.countFollowers(target.id)) === 0) {
+        repo.deleteUserCascade(target.id) // orphaned self-serve feed → stop polling. Instances never auto-cleaned.
+      }
     },
     listFollowing(userId: string) {
       return repo.listFollowing(userId)

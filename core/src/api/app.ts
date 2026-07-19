@@ -207,7 +207,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
   app.delete('/me/follows/:target', authed, async (c) => {
     const target = await resolveUser(c.req.param('target') ?? '')
     if (!target) return c.json({ error: 'unknown user' }, 404)
-    await service.removeFollow(c.get('coreUser').id, target.id)
+    await service.removeFollow(c.get('coreUser').id, target)
     return c.json({ ok: true }, 200)
   })
 

@@ -33,9 +33,9 @@ test('follow, list, and unfollow round-trip', async () => {
   const list = await (await app.request('/users/alice/follows')).json()
   expect(list.following.map((u: { handle: string }) => u.handle)).toEqual(['news'])
   const d = await app.request('/me/follows/news', { method: 'DELETE', headers: { cookie } })
-  expect(d.status).toBe(200)
-  const d2 = await app.request('/me/follows/news', { method: 'DELETE', headers: { cookie } }) // idempotent
-  expect(d2.status).toBe(200)
+  expect(d.status).toBe(200) // alice was the last follower of this webfeed → cascade-deleted (task 6)
+  const d2 = await app.request('/me/follows/news', { method: 'DELETE', headers: { cookie } }) // handle no longer resolves
+  expect(d2.status).toBe(404)
 })
 
 test('follow errors: 404 unknown handle; anonymous session CAN follow', async () => {
