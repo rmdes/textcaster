@@ -13,6 +13,14 @@ function normalizeHandle(handle: string): string {
   return normalized
 }
 
+// Instance targets are global (Decision B) and self-follows are meaningless —
+// mint nothing for either; callers branch on the returned boolean.
+async function followUnlessExcluded(repo: Repository, followerId: string, target: User): Promise<boolean> {
+  if (target.feedType === 'instance' || target.id === followerId) return false
+  await repo.addFollow(followerId, target.id)
+  return true
+}
+
 export function createService(repo: Repository, bus: EventBus, publicUrl?: string | null) {
   async function ensureLocalUser(handle: string, displayName: string): Promise<User> {
     const normalized = normalizeHandle(handle)
@@ -114,9 +122,9 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
     getRecentLocalPosts(limit: number) {
       return repo.getRecentLocalPosts(limit)
     },
-    async addFollow(follower: User, target: User): Promise<void> {
+    async addFollow(follower: User, target: User): Promise<boolean> {
       if (follower.kind !== 'local') throw new DomainError('follower must be a local user')
-      await repo.addFollow(follower.id, target.id)
+      return followUnlessExcluded(repo, follower.id, target)
     },
     async removeFollow(followerId: string, target: User): Promise<void> {
       await repo.removeFollow(followerId, target.id)
@@ -158,10 +166,10 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
       await repo.deletePost(id)
       return { ok: true }
     },
-    async subscribeByUrl(user: User, url: string, type: 'person' | 'webfeed'): Promise<{ user: User; followed: true } | { error: 'cap' }> {
+    async subscribeByUrl(user: User, url: string, type: 'person' | 'webfeed'): Promise<{ user: User; followed: boolean; created: boolean } | { error: 'cap' }> {
       const existing = await repo.getRemoteUserByFeedUrl(url)
-      // caller is a registered LOCAL user → addFollow's local-follower guard is satisfied by construction; call repo directly (service methods close over `repo`, not `this`).
-      if (existing) { await repo.addFollow(user.id, existing.id); return { user: existing, followed: true } }
+      // caller is a registered LOCAL user → addFollow's local-follower guard is satisfied by construction; call the shared helper directly (service methods close over `repo`, not `this`).
+      if (existing) return { user: existing, followed: await followUnlessExcluded(repo, user.id, existing), created: false }
       const cap = Number(await repo.getSetting('max_subs_per_user') ?? '500')
       if (await repo.countRemoteSubscriptions(user.id) >= cap) return { error: 'cap' }
       const base = slugBase(new URL(url).host)
@@ -173,15 +181,16 @@ export function createService(repo: Repository, bus: EventBus, publicUrl?: strin
         // won the feed_url race while we were retrying. Re-resolve instead of
         // 500ing: the race loser follows the winner.
         const raced = await repo.getRemoteUserByFeedUrl(url)
-        if (raced) { await repo.addFollow(user.id, raced.id); return { user: raced, followed: true } }
+        if (raced) return { user: raced, followed: await followUnlessExcluded(repo, user.id, raced), created: false }
         throw new DomainError('could not allocate a handle')
       }
-      await repo.addFollow(user.id, target.id)
-      return { user: target, followed: true }
+      await repo.addFollow(user.id, target.id) // fresh person/webfeed row — never excluded
+      return { user: target, followed: true, created: true }
     },
     getSetting(key: string) { return repo.getSetting(key) },
     setSetting(key: string, value: string) { return repo.setSetting(key, value) },
     countRemoteSubscriptions(userId: string) { return repo.countRemoteSubscriptions(userId) },
+    getRemoteUserByFeedUrl(url: string) { return repo.getRemoteUserByFeedUrl(url) },
   }
 }
 

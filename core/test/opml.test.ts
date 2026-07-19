@@ -39,7 +39,7 @@ async function importSetup(publicUrl: string | null) {
     listRemoteUsers: () => repo.listRemoteUsers(),
     getUserByHandle: (h: string) => repo.getUserByHandle(h),
     addRemoteUser: (i: { handle: string; displayName: string; feedUrl: string }) => svc.addRemoteUser(i),
-    addFollow: (f: typeof follower, t: typeof follower) => svc.addFollow(f, t),
+    addFollow: async (f: typeof follower, t: typeof follower) => { await svc.addFollow(f, t); return true },
     getSetting: (k: string) => repo.getSetting(k),
     countRemoteSubscriptions: (userId: string) => repo.countRemoteSubscriptions(userId),
     publicUrl,
@@ -108,7 +108,7 @@ test('same-slug outlines collide on handle and get suffixed (H3)', async () => {
 })
 
 test('outlines beyond MAX_OUTLINES cap are counted as skipped (H5)', async () => {
-  const { repo, svc, follower, deps } = await importSetup(null)
+  const { svc, follower, deps } = await importSetup(null)
   await svc.setSetting('max_subs_per_user', '2000') // isolate MAX_OUTLINES from the addendum-A subscription cap (default 500)
   // Same IP literal, distinct paths — checkCallbackUrl only inspects the host,
   // so this stays a single synchronous IP check per outline (no DNS × 1001).

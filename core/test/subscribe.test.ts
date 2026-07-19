@@ -74,7 +74,36 @@ test('subscribeByUrl re-resolves and follows the winner when a concurrent create
 
   const result = await svc.subscribeByUrl(alice, url, 'webfeed')
 
-  expect(result).toEqual({ user: winner, followed: true })
+  expect(result).toEqual({ user: winner, followed: true, created: false })
   expect(follows).toEqual([['alice-id', 'winner-id']])
   expect(getByUrlCalls).toBe(2) // initial miss, then the post-mint re-resolve
+})
+
+test('subscribeByUrl reuse of an instance URL mints NO follow (guard)', async () => {
+  const url = 'https://peer.example/feed.xml'
+  const instance: User = { id: 'inst-id', kind: 'remote', handle: 'peer', displayName: 'Peer', feedUrl: url, createdAt: '2026-01-01T00:00:00.000Z', authUserId: null, feedType: 'instance' }
+  const follows: Array<[string, string]> = []
+  const repo = {
+    getRemoteUserByFeedUrl: async () => instance,
+    addFollow: async (a: string, b: string) => { follows.push([a, b]) },
+  } as unknown as Repository
+  const svc = createService(repo, createEventBus())
+  const alice: User = { id: 'alice-id', kind: 'local', handle: 'alice', displayName: 'Alice', feedUrl: null, createdAt: '2026-01-01T00:00:00.000Z', authUserId: null }
+  const result = await svc.subscribeByUrl(alice, url, 'webfeed')
+  expect(result).toEqual({ user: instance, followed: false, created: false })
+  expect(follows).toEqual([])
+})
+
+test('addFollow refuses self-follow and instance targets, minting nothing', async () => {
+  const follows: Array<[string, string]> = []
+  const repo = { addFollow: async (a: string, b: string) => { follows.push([a, b]) } } as unknown as Repository
+  const svc = createService(repo, createEventBus())
+  const alice: User = { id: 'alice-id', kind: 'local', handle: 'alice', displayName: 'Alice', feedUrl: null, createdAt: '2026-01-01T00:00:00.000Z', authUserId: null }
+  const peer: User = { id: 'inst-id', kind: 'remote', handle: 'peer', displayName: 'Peer', feedUrl: 'https://p.example/f.xml', createdAt: '2026-01-01T00:00:00.000Z', authUserId: null, feedType: 'instance' }
+  expect(await svc.addFollow(alice, alice)).toBe(false)
+  expect(await svc.addFollow(alice, peer)).toBe(false)
+  expect(follows).toEqual([])
+  const person: User = { ...peer, id: 'p2', handle: 'p2', feedType: 'person' }
+  expect(await svc.addFollow(alice, person)).toBe(true)
+  expect(follows).toEqual([['alice-id', 'p2']])
 })

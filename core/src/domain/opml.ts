@@ -59,14 +59,14 @@ export interface ImportDeps {
   listRemoteUsers: () => Promise<User[]>
   getUserByHandle: (h: string) => Promise<User | undefined>
   addRemoteUser: (i: NewRemoteUser) => Promise<User>
-  addFollow: (follower: User, target: User) => Promise<void>
+  addFollow: (follower: User, target: User) => Promise<boolean>
   getSetting: (key: string) => Promise<string | undefined>
   countRemoteSubscriptions: (userId: string) => Promise<number>
   publicUrl: string | null
 }
 
 // Parse an "our own feed" URL → the local handle it points at, else null (H2: both minted URLs).
-function localHandleForUrl(url: string, publicUrl: string | null): string | null {
+export function localHandleForUrl(url: string, publicUrl: string | null): string | null {
   if (!publicUrl) return null
   const prefix = `${publicUrl}/users/`
   if (!url.startsWith(prefix)) return null

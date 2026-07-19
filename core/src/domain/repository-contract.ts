@@ -274,6 +274,8 @@ export function runRepositoryContract(makeRepo: () => Promise<Repository>) {
       expect(await repo.listFollowing(a.id)).toEqual([])
     })
 
+    // This contract describes the REPO layer, which stays permissive; the
+    // SERVICE layer refuses self-follows as of SP3 (service.ts's addFollow guard).
     test('self-follow is allowed and needs no special-casing', async () => {
       const repo = await makeRepo()
       const a = await repo.createLocalUser({ handle: 'alice', displayName: 'Alice' })

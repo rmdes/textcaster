@@ -8,7 +8,7 @@ import { parseCursor, formatCursor } from './cursor.ts'
 import { DomainError, HandleTakenError } from '../domain/types.ts'
 import { hideResolvedReplyContext } from '../domain/types.ts'
 import { renderRssFeed, renderJsonFeed, renderCommentsFeed, injectSourceComments, renderFirehoseRss, emittedGuid } from '../domain/feed.ts'
-import { buildFollowingOpml, importFollowingOpml } from '../domain/opml.ts'
+import { buildFollowingOpml, importFollowingOpml, localHandleForUrl } from '../domain/opml.ts'
 import { checkCallbackUrl } from '../domain/push-guard.ts'
 import type { FeedContext } from '../domain/feed.ts'
 import type { Service } from '../domain/service.ts'
@@ -299,9 +299,21 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
     if (!isSubscriptionType(type)) return c.json({ error: 'type invalid' }, 400)
     if (!isValidFeedUrl(url)) return c.json({ error: 'url invalid' }, 400)
     if (!(await checkCallbackUrl(url)).ok) return c.json({ error: 'url invalid' }, 400)
+    // Own-instance feed URL → follow the local user; never mint a remote shadow (SP3 F1).
+    // Requires publicUrl; without it (dev) the resolve never matches — accepted, spec S4.
+    // Note: this sits AFTER the SSRF gate, so a publicUrl host that resolves
+    // privately from core's vantage (split-horizon DNS) 400s before reaching here.
+    const localHandle = localHandleForUrl(url, feeds.publicUrl)
+    if (localHandle) {
+      const local = await resolveUser(localHandle)
+      if (local && local.kind === 'local') {
+        const minted = await service.addFollow(c.get('coreUser'), local)
+        return c.json({ user: local, followed: minted }, 200)
+      }
+    }
     const result = await service.subscribeByUrl(c.get('coreUser'), url, type)
     if ('error' in result) return c.json({ error: 'subscription limit reached' }, 429)
-    return c.json({ user: result.user, followed: true }, 201)
+    return c.json({ user: result.user, followed: result.followed }, result.created ? 201 : 200)
   })
 
   const FEED_LIMIT = 50
