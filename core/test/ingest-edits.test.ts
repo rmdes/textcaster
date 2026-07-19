@@ -18,7 +18,7 @@ describe('ingest edit-detection', () => {
   })
   const parsed = (over: Partial<ParsedItem> = {}): ParsedItem => ({
     guid: 'g1', title: null, content: 'x', url: null, publishedAt: '2026-01-01T00:00:00.000Z',
-    inReplyTo: null, sourceName: null, sourceFeedUrl: null, contentMarkdown: null, updatedAt: null, ...over,
+    inReplyTo: null, sourceName: null, sourceFeedUrl: null, contentMarkdown: null, updatedAt: null, replyContextAuthor: null, replyContextSnippet: null, ...over,
   })
 
   it('re-ingest same guid with changed body → revision + edited_at + emitted on new-post', async () => {

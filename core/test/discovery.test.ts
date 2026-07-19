@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { discoverFeed } from '../src/domain/discovery.ts'
+import { discoverFeed, parseInReplyTo, truncate } from '../src/domain/discovery.ts'
 
 test('autodiscovery: returns the first alternate feed link, absolute, excluding bare json', () => {
   // microformats-parser rejects a <body> with no element children ("unable to
@@ -61,4 +61,49 @@ test('a single h-entry carrying a nested microformat (e.g. h-card) is still mapp
   const html = `<div class="h-entry"><p class="e-content">hi</p><a class="u-url" href="https://s.ex/1">l</a><div class="h-card">Nested card</div></div>`
   const { hentries } = discoverFeed(html, 'https://s.ex/')
   expect(hentries.map((h) => h.url)).toEqual(['https://s.ex/1'])
+})
+
+test('parseInReplyTo: string ref → ref, no context', () => {
+  expect(parseInReplyTo('https://a/1')).toEqual({ ref: 'https://a/1', contextAuthor: null, contextSnippet: null })
+})
+test('parseInReplyTo: single h-cite → url ref + author + snippet', () => {
+  const cite = { type: 'cite', url: 'https://a/1', author: { type: 'card', name: 'aaronpk' }, content: { html: '<p>hi</p>', text: 'hi there' } }
+  expect(parseInReplyTo(cite)).toEqual({ ref: 'https://a/1', contextAuthor: 'aaronpk', contextSnippet: 'hi there' })
+})
+test('parseInReplyTo: multi-cite {children:[…]} → first cite ref (F1)', () => {
+  const irt = { children: [{ type: 'cite', url: 'https://a/1', author: { name: 'x' } }, { type: 'cite', url: 'https://a/2' }] }
+  expect(parseInReplyTo(irt).ref).toBe('https://a/1')
+})
+test('parseInReplyTo: array url → url[0] (F2)', () => {
+  expect(parseInReplyTo({ type: 'cite', url: ['https://a/1', 'https://a/2'], author: { name: 'x' } }).ref).toBe('https://a/1')
+})
+test('parseInReplyTo: plain-string author', () => {
+  expect(parseInReplyTo({ type: 'cite', url: 'https://a/1', author: 'Aaron Parecki' }).contextAuthor).toBe('Aaron Parecki')
+})
+test('parseInReplyTo: no url → ref null, author kept', () => {
+  expect(parseInReplyTo({ type: 'cite', author: { name: 'x' } })).toEqual({ ref: null, contextAuthor: 'x', contextSnippet: null })
+})
+test('parseInReplyTo: html-only content → snippet null (author-only)', () => {
+  expect(parseInReplyTo({ type: 'cite', url: 'https://a/1', author: { name: 'x' }, content: { html: '<p>hi</p>' } }).contextSnippet).toBeNull()
+})
+test('parseInReplyTo: snippet but NO author → whole context dropped (P4)', () => {
+  expect(parseInReplyTo({ type: 'cite', url: 'https://a/1', content: { text: 'hi' } }))
+    .toEqual({ ref: 'https://a/1', contextAuthor: null, contextSnippet: null })
+})
+test('parseInReplyTo: non-cite / undefined → all null', () => {
+  expect(parseInReplyTo(undefined)).toEqual({ ref: null, contextAuthor: null, contextSnippet: null })
+})
+
+test('truncate: null / empty / all-whitespace → null (never a bare …)', () => {
+  expect(truncate(null, 200)).toBeNull()
+  expect(truncate('   ', 200)).toBeNull()
+})
+test('truncate: short string returned as-is (trimmed)', () => {
+  expect(truncate('  hi  ', 200)).toBe('hi')
+})
+test('truncate: >n code points → n + …, code-point-safe at an astral boundary', () => {
+  const out = truncate('😀'.repeat(250), 200)!
+  expect(Array.from(out)).toHaveLength(201) // 200 code points + the …
+  expect(out.endsWith('…')).toBe(true)
+  expect(out).not.toContain('�') // no split surrogate
 })

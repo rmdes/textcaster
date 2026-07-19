@@ -7,7 +7,7 @@ import { discoverFeed } from './discovery.ts'
 import { checkCallbackUrl } from './push-guard.ts'
 import type { LookupFn } from './push-guard.ts'
 
-export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string; inReplyTo: string | null; sourceName: string | null; sourceFeedUrl: string | null; contentMarkdown: string | null; updatedAt: string | null }
+export interface ParsedItem { guid: string; title: string | null; content: string; url: string | null; publishedAt: string; inReplyTo: string | null; sourceName: string | null; sourceFeedUrl: string | null; contentMarkdown: string | null; updatedAt: string | null; replyContextAuthor: string | null; replyContextSnippet: string | null }
 
 export interface FeedDiscovery {
   hubs: string[]
@@ -53,7 +53,7 @@ function itemInReplyTo(it: { sourceNs?: { inReplyTo?: { value?: string } }; thr?
 
 const httpOnly = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u) ? u : null)
 
-export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string, inReplyTo: string | null = null, source?: { title?: string; url?: string }, contentMarkdown: string | null = null, updatedAt: string | null = null): ParsedItem {
+export function toParsedItem(guid: string | undefined, title: string | null, content: string, url: string | null, rawDate: string, now: string, inReplyTo: string | null = null, source?: { title?: string; url?: string }, contentMarkdown: string | null = null, updatedAt: string | null = null, reply: { author: string | null; snippet: string | null } = { author: null, snippet: null }): ParsedItem {
   // Item links come from remote feed content and end up as <a href> in the web
   // client — only http(s) survives (a javascript: link would be click-to-XSS).
   // The guid fallback chain keeps the RAW value: it's an opaque dedup id, and
@@ -71,6 +71,8 @@ export function toParsedItem(guid: string | undefined, title: string | null, con
     sourceFeedUrl: httpOnly(source?.url),
     contentMarkdown,
     updatedAt,
+    replyContextAuthor: reply.author,
+    replyContextSnippet: reply.snippet,
   }
 }
 
