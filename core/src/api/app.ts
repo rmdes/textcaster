@@ -9,6 +9,7 @@ import { DomainError, HandleTakenError } from '../domain/types.ts'
 import { hideResolvedReplyContext } from '../domain/types.ts'
 import { renderRssFeed, renderJsonFeed, renderCommentsFeed, injectSourceComments, renderFirehoseRss, emittedGuid } from '../domain/feed.ts'
 import { buildFollowingOpml, importFollowingOpml } from '../domain/opml.ts'
+import { checkCallbackUrl } from '../domain/push-guard.ts'
 import type { FeedContext } from '../domain/feed.ts'
 import type { Service } from '../domain/service.ts'
 import type { EventBus } from '../domain/bus.ts'
@@ -26,6 +27,10 @@ function isValidFeedUrl(feedUrl: unknown): feedUrl is string {
 
 function isString(v: unknown, min: number, max: number): v is string {
   return typeof v === 'string' && v.length >= min && v.length <= max
+}
+
+function isSubscriptionType(v: unknown): v is 'person' | 'webfeed' {
+  return v === 'person' || v === 'webfeed'
 }
 
 async function readJsonBody(c: Context): Promise<Record<string, unknown> | null> {
@@ -264,6 +269,23 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
       body,
     )
     return c.json(result, 200)
+  })
+
+  // Self-serve subscribe by URL (SP1 per-user feeds): registeredOnly (guests
+  // can't grow the remote-user table) + SSRF-checked (checkCallbackUrl —
+  // same gate as push callbacks, no lookupFn DI needed: a literal loopback
+  // IP is rejected without a DNS round-trip).
+  app.post('/me/subscriptions', authed, registeredOnly(), async (c) => {
+    const body = await readJsonBody(c)
+    if (!body) return c.json({ error: 'body invalid' }, 400)
+    const { url, type } = body
+    if (!isString(url, 1, 2000)) return c.json({ error: 'url invalid' }, 400)
+    if (!isSubscriptionType(type)) return c.json({ error: 'type invalid' }, 400)
+    if (!isValidFeedUrl(url)) return c.json({ error: 'url invalid' }, 400)
+    if (!(await checkCallbackUrl(url)).ok) return c.json({ error: 'url invalid' }, 400)
+    const result = await service.subscribeByUrl(c.get('coreUser'), url, type)
+    if ('error' in result) return c.json({ error: 'subscription limit reached' }, 429)
+    return c.json({ user: result.user, followed: true }, 201)
   })
 
   const FEED_LIMIT = 50
