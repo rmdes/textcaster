@@ -68,13 +68,13 @@
 	)
 </script>
 
-<svelte:head><title>Conversation — Textcaster</title></svelte:head>
+<svelte:head><title>Conversation — RSC</title></svelte:head>
 
 <LiveTimeline {onPost} />
 
 <div class="lens">
 	<header class="masthead">
-		<a href="/">Textcaster</a>
+		<a href="/">RSC</a>
 		<ThemeToggle />
 	</header>
 

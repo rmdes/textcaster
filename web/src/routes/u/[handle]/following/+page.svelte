@@ -29,7 +29,7 @@
 	}
 </script>
 
-<svelte:head><title>@{data.handle} following — Textcaster</title></svelte:head>
+<svelte:head><title>@{data.handle} following — RSC</title></svelte:head>
 
 {#if data.isFirstPage}
 	<LiveTimeline {onPost} />
@@ -37,7 +37,7 @@
 
 <div class="lens">
 	<header class="masthead">
-		<a href="/">Textcaster</a>
+		<a href="/">RSC</a>
 		<ThemeToggle />
 	</header>
 

@@ -40,8 +40,7 @@
 		edited = r.edited
 	}
 
-	// Group Textcasting peers by instance host: "which textcasters is this
-	// instance connected to" reads as instances, not individual feed URLs.
+	// Group Textcasting peers by instance host: "which Textcasting authors is this instance hosting..."
 	const peerHosts = $derived.by(() => {
 		const counts = new Map<string, number>()
 		for (const p of data.peers ?? []) {
@@ -61,7 +60,7 @@
 	}
 </script>
 
-<svelte:head><title>Textcaster</title></svelte:head>
+<svelte:head><title>RSC</title></svelte:head>
 
 {#if data.isFirstPage}
 	<LiveTimeline {onPost} />
@@ -70,7 +69,7 @@
 <div class="shell">
 	<aside class="tools">
 		<header class="masthead">
-			<a href="/">Textcaster</a>
+			<a href="/">RSC</a>
 			<ThemeToggle />
 		</header>
 
@@ -184,15 +183,17 @@
 		<details class="panel" open>
 			<summary>About</summary>
 			<p>
-				Textcaster is a feeds-native social timeline: people who post here and people who post on
-				their own site are equal citizens. Everything travels as RSS — posts, replies, whole
-				conversations — so following, threading, and federation work with nothing but open feeds.
+				RSC — Really Simple Conversations — is a feeds-native social timeline: people who post here
+				and people who post on their own site are equal citizens. Everything travels as RSS — posts,
+				replies, whole conversations — so following, threading, and federation work with nothing but
+				open feeds.
 			</p>
 			<p>
-				Built on <a href="https://textcasting.org" rel="noreferrer">Textcasting</a>, inspired by Dave
-				Winer's <a href="https://github.com/scripting/rss.chat" rel="noreferrer">rss.chat</a>.
+				Inspired by Dave Winer's
+				<a href="https://textcasting.org" rel="noreferrer">Textcasting</a> and
+				<a href="https://github.com/scripting/rss.chat" rel="noreferrer">rss.chat</a>.
 			</p>
-			<p><a href="https://github.com/rmdes/textcaster" rel="noreferrer">Source &amp; docs</a></p>
+			<p><a href="https://github.com/rmdes/rsc" rel="noreferrer">Source &amp; docs</a></p>
 		</details>
 
 		<details class="panel" open>

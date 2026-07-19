@@ -10,7 +10,7 @@ function sessionedEvent(fields: Record<string, string>, fetch: ReturnType<typeof
 		fetch,
 		params: { id },
 		url: new URL('http://x/'),
-		cookies: { getAll: () => [{ name: 'textcaster.session_token', value: 's1' }] }
+		cookies: { getAll: () => [{ name: 'rsc.session_token', value: 's1' }] }
 	}
 }
 

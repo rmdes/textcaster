@@ -15,14 +15,14 @@ function cookielessCookies() {
 }
 
 function sessionedCookies() {
-	return { getAll: () => [{ name: 'textcaster.session_token', value: 's1' }], set: vi.fn(), delete: vi.fn() }
+	return { getAll: () => [{ name: 'rsc.session_token', value: 's1' }], set: vi.fn(), delete: vi.fn() }
 }
 
 test('register signs up and returns check-inbox state (NOT a redirect), relaying any cookie the response carries', async () => {
 	// Hard verification: sign-up never mints a usable session, so there is
 	// normally no set-cookie header here — this response carries one anyway to
 	// prove the relay still fires if one ever shows up.
-	const res = new Response(null, { headers: { 'set-cookie': 'textcaster.session_token=minted; Path=/; HttpOnly; Max-Age=600' } })
+	const res = new Response(null, { headers: { 'set-cookie': 'rsc.session_token=minted; Path=/; HttpOnly; Max-Age=600' } })
 	const fetch = vi.fn(async (..._args: unknown[]) => res)
 	const cookies = cookielessCookies()
 	const event = { request: formRequest('register', { email: 'a@example.com', password: 'password123' }), fetch, cookies, url: new URL('http://x/'), getClientAddress: () => '203.0.113.1' }
@@ -34,7 +34,7 @@ test('register signs up and returns check-inbox state (NOT a redirect), relaying
 	expect(headers.get('origin')).toBe('http://x')
 	expect(headers.get('cookie')).toBeNull() // no anon cookie to ride along in this case
 	expect(JSON.parse(String(init.body))).toEqual({ email: 'a@example.com', password: 'password123', name: 'a' })
-	expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 'minted', expect.objectContaining({ path: '/' }))
+	expect(cookies.set).toHaveBeenCalledWith('rsc.session_token', 'minted', expect.objectContaining({ path: '/' }))
 })
 
 test('register forwards an existing anonymous cookie so better-auth can link the account', async () => {
@@ -43,7 +43,7 @@ test('register forwards an existing anonymous cookie so better-auth can link the
 	const result = await registerActions.register(event as never)
 	expect(result).toEqual({ checkInbox: true, email: 'a@example.com' })
 	const headers = new Headers((fetch.mock.calls[0][1] as RequestInit).headers)
-	expect(headers.get('cookie')).toBe('textcaster.session_token=s1')
+	expect(headers.get('cookie')).toBe('rsc.session_token=s1')
 })
 
 test('register surfaces the mail-gate error on a 503 from core (email accounts unavailable)', async () => {
@@ -71,7 +71,7 @@ test('register surfaces the better-auth error message on failure', async () => {
 })
 
 test('login signs in, relays the cookie, and redirects', async () => {
-	const res = new Response(null, { headers: { 'set-cookie': 'textcaster.session_token=s2; Path=/; HttpOnly; Max-Age=600' } })
+	const res = new Response(null, { headers: { 'set-cookie': 'rsc.session_token=s2; Path=/; HttpOnly; Max-Age=600' } })
 	const fetch = vi.fn(async (..._args: unknown[]) => res)
 	const cookies = cookielessCookies()
 	const event = { request: formRequest('login', { email: 'a@example.com', password: 'password123' }), fetch, cookies, url: new URL('http://x/'), getClientAddress: () => '203.0.113.1' }
@@ -79,7 +79,7 @@ test('login signs in, relays the cookie, and redirects', async () => {
 	const [url, init] = fetch.mock.calls[0] as [string, RequestInit]
 	expect(url).toContain('/api/auth/sign-in/email')
 	expect(JSON.parse(String(init.body))).toEqual({ email: 'a@example.com', password: 'password123' })
-	expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 's2', expect.objectContaining({ path: '/' }))
+	expect(cookies.set).toHaveBeenCalledWith('rsc.session_token', 's2', expect.objectContaining({ path: '/' }))
 })
 
 test('login surfaces the better-auth error message on failure', async () => {
@@ -91,7 +91,7 @@ test('login surfaces the better-auth error message on failure', async () => {
 })
 
 test('login magic action sends a magic link, relays cookies, and reports magicSent', async () => {
-	const res = new Response(null, { headers: { 'set-cookie': 'textcaster.session_token=s3; Path=/; HttpOnly; Max-Age=600' } })
+	const res = new Response(null, { headers: { 'set-cookie': 'rsc.session_token=s3; Path=/; HttpOnly; Max-Age=600' } })
 	const fetch = vi.fn(async (..._args: unknown[]) => res)
 	const cookies = cookielessCookies()
 	const event = { request: formRequest('magic', { email: 'a@example.com' }), fetch, cookies, url: new URL('http://x/'), getClientAddress: () => '203.0.113.1' }
@@ -100,7 +100,7 @@ test('login magic action sends a magic link, relays cookies, and reports magicSe
 	const [url, init] = fetch.mock.calls[0] as [string, RequestInit]
 	expect(url).toContain('/api/auth/sign-in/magic-link')
 	expect(JSON.parse(String(init.body))).toEqual({ email: 'a@example.com' })
-	expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 's3', expect.objectContaining({ path: '/' }))
+	expect(cookies.set).toHaveBeenCalledWith('rsc.session_token', 's3', expect.objectContaining({ path: '/' }))
 })
 
 test('login magic action rejects an empty email before ever calling the core', async () => {
@@ -129,7 +129,7 @@ test('forgot returns the same neutral message even when core errors (no account 
 })
 
 test('reset maps token and newPassword onto the core call, relays cookies, and redirects to login', async () => {
-	const res = new Response(null, { headers: { 'set-cookie': 'textcaster.session_token=s4; Path=/; HttpOnly; Max-Age=600' } })
+	const res = new Response(null, { headers: { 'set-cookie': 'rsc.session_token=s4; Path=/; HttpOnly; Max-Age=600' } })
 	const fetch = vi.fn(async (..._args: unknown[]) => res)
 	const cookies = cookielessCookies()
 	const event = { request: formRequest('reset', { token: 'tok123', newPassword: 'newpassword1' }), fetch, cookies, url: new URL('http://x/'), getClientAddress: () => '203.0.113.1' }
@@ -137,7 +137,7 @@ test('reset maps token and newPassword onto the core call, relays cookies, and r
 	const [url, init] = fetch.mock.calls[0] as [string, RequestInit]
 	expect(url).toContain('/api/auth/reset-password')
 	expect(JSON.parse(String(init.body))).toEqual({ newPassword: 'newpassword1', token: 'tok123' })
-	expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 's4', expect.objectContaining({ path: '/' }))
+	expect(cookies.set).toHaveBeenCalledWith('rsc.session_token', 's4', expect.objectContaining({ path: '/' }))
 })
 
 test('reset rejects a short password before ever calling the core', async () => {
@@ -149,7 +149,7 @@ test('reset rejects a short password before ever calling the core', async () => 
 })
 
 test('logout calls sign-out with the session cookie and origin, relays the clear, and redirects', async () => {
-	const res = new Response(null, { headers: { 'set-cookie': 'textcaster.session_token=; Path=/; Max-Age=0' } })
+	const res = new Response(null, { headers: { 'set-cookie': 'rsc.session_token=; Path=/; Max-Age=0' } })
 	const fetch = vi.fn(async (..._args: unknown[]) => res)
 	const cookies = sessionedCookies()
 	const event = { fetch, cookies, url: new URL('http://x/'), getClientAddress: () => '203.0.113.1' }
@@ -157,11 +157,11 @@ test('logout calls sign-out with the session cookie and origin, relays the clear
 	const [url, init] = fetch.mock.calls[0] as [string, RequestInit]
 	expect(url).toContain('/api/auth/sign-out')
 	const headers = new Headers(init.headers)
-	expect(headers.get('cookie')).toBe('textcaster.session_token=s1')
+	expect(headers.get('cookie')).toBe('rsc.session_token=s1')
 	expect(headers.get('origin')).toBe('http://x')
 	expect(headers.get('content-type')).toBe('application/json') // better-auth 415s without it
 	expect(init.body).toBe('{}') // and 400s on a json content-type with no body at all
-	expect(cookies.delete).toHaveBeenCalledWith('textcaster.session_token', { path: '/' })
+	expect(cookies.delete).toHaveBeenCalledWith('rsc.session_token', { path: '/' })
 })
 
 test('logout without a session never calls sign-out, just redirects', async () => {
@@ -179,7 +179,7 @@ test('settings save updates the profile and redirects', async () => {
 	expect(url).toContain('/me')
 	expect(String((init as RequestInit).method)).toBe('PATCH')
 	const headers = new Headers(init.headers)
-	expect(headers.get('cookie')).toBe('textcaster.session_token=s1')
+	expect(headers.get('cookie')).toBe('rsc.session_token=s1')
 	expect(JSON.parse(String(init.body))).toEqual({ handle: 'newhandle', displayName: 'New Name' })
 })
 

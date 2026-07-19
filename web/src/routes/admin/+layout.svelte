@@ -14,7 +14,7 @@
 
 <div class="lens">
 	<header class="masthead">
-		<a href="/">Textcaster</a>
+		<a href="/">RSC</a>
 		<ThemeToggle />
 	</header>
 

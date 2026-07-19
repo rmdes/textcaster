@@ -5,7 +5,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 </script>
 
-<svelte:head><title>Admin · Settings — Textcaster</title></svelte:head>
+<svelte:head><title>Admin · Settings — RSC</title></svelte:head>
 
 <h2>Settings</h2>
 

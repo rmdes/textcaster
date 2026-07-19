@@ -8,10 +8,10 @@
 	let content = $derived(data.post.content)
 </script>
 
-<svelte:head><title>Edit — Textcaster</title></svelte:head>
+<svelte:head><title>Edit — RSC</title></svelte:head>
 
 <div class="lens">
-	<header class="masthead"><a href="/">Textcaster</a></header>
+	<header class="masthead"><a href="/">RSC</a></header>
 	<h1>Edit post</h1>
 	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
 	<form method="POST" action="?/edit" class="composer" use:enhance>

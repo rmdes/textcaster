@@ -4,7 +4,7 @@ import { load, actions } from './+page.server.ts'
 function ctx(over: Record<string, unknown> = {}) {
   return {
     fetch: vi.fn(),
-    cookies: { getAll: () => [{ name: 'textcaster.session_token', value: 's' }], set: vi.fn(), delete: vi.fn() },
+    cookies: { getAll: () => [{ name: 'rsc.session_token', value: 's' }], set: vi.fn(), delete: vi.fn() },
     url: new URL('http://x/accounts'),
     getClientAddress: () => '203.0.113.1',
     parent: async () => ({ me: { user: { handle: 'admin' }, isAnonymous: false } }),
@@ -46,15 +46,15 @@ test('switch resolves the opaque id → token server-side and relays cookies (M5
     if (url.includes('list-device-sessions')) return new Response(JSON.stringify(list), { status: 200 })
     if (url.includes('set-active')) {
       expect(JSON.parse(String(init?.body))).toEqual({ sessionToken: 't1' }) // token resolved server-side, not from the form
-      return new Response('{}', { status: 200, headers: { 'set-cookie': 'textcaster.session_token=t1; Path=/; HttpOnly' } })
+      return new Response('{}', { status: 200, headers: { 'set-cookie': 'rsc.session_token=t1; Path=/; HttpOnly' } })
     }
     throw new Error(`unexpected ${url}`)
   })
-  const cookies = { getAll: () => [{ name: 'textcaster.session_token', value: 's' }], set: vi.fn(), delete: vi.fn() }
+  const cookies = { getAll: () => [{ name: 'rsc.session_token', value: 's' }], set: vi.fn(), delete: vi.fn() }
   const form = new URLSearchParams({ id: 'u1' })
   const event = ctx({ fetch, cookies, request: new Request('http://x/accounts?/switch', { method: 'POST', body: form }) })
   await expect(actions.switch(event as never)).rejects.toMatchObject({ status: 303, location: '/accounts' })
-  expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 't1', expect.objectContaining({ path: '/' }))
+  expect(cookies.set).toHaveBeenCalledWith('rsc.session_token', 't1', expect.objectContaining({ path: '/' }))
 })
 
 test('logoutOne switches to another registered account THEN revokes the old (M2 order)', async () => {

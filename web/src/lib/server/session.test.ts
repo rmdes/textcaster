@@ -20,9 +20,9 @@ test('hasSession / cookieHeader read the cookie jar', () => {
 	expect(hasSession(empty as unknown as Cookies)).toBe(false)
 	expect(cookieHeader(empty as unknown as Cookies)).toBeNull()
 
-	const withSession = fakeCookies([{ name: 'textcaster.session_token', value: 'x' }])
+	const withSession = fakeCookies([{ name: 'rsc.session_token', value: 'x' }])
 	expect(hasSession(withSession as unknown as Cookies)).toBe(true)
-	expect(cookieHeader(withSession as unknown as Cookies)).toBe('textcaster.session_token=x')
+	expect(cookieHeader(withSession as unknown as Cookies)).toBe('rsc.session_token=x')
 })
 
 test('authedFetch injects Cookie and Origin headers', async () => {
@@ -46,10 +46,10 @@ test('authedFetch omits the Cookie header when cookie is null', async () => {
 test('relaySetCookies relays name/value/maxAge, httpOnly + SameSite=Lax + Path=/', () => {
 	const cookies = fakeCookies()
 	const res = new Response(null, {
-		headers: { 'set-cookie': 'textcaster.session_token=abc123; Path=/; HttpOnly; Max-Age=600' }
+		headers: { 'set-cookie': 'rsc.session_token=abc123; Path=/; HttpOnly; Max-Age=600' }
 	})
 	relaySetCookies(cookies as unknown as Cookies, res)
-	expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 'abc123', {
+	expect(cookies.set).toHaveBeenCalledWith('rsc.session_token', 'abc123', {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
@@ -58,19 +58,19 @@ test('relaySetCookies relays name/value/maxAge, httpOnly + SameSite=Lax + Path=/
 })
 
 test('relaySetCookies deletes the cookie when Max-Age <= 0', () => {
-	const cookies = fakeCookies([{ name: 'textcaster.session_token', value: 'stale' }])
+	const cookies = fakeCookies([{ name: 'rsc.session_token', value: 'stale' }])
 	const res = new Response(null, {
-		headers: { 'set-cookie': 'textcaster.session_token=; Path=/; Max-Age=0' }
+		headers: { 'set-cookie': 'rsc.session_token=; Path=/; Max-Age=0' }
 	})
 	relaySetCookies(cookies as unknown as Cookies, res)
-	expect(cookies.delete).toHaveBeenCalledWith('textcaster.session_token', { path: '/' })
+	expect(cookies.delete).toHaveBeenCalledWith('rsc.session_token', { path: '/' })
 	expect(cookies.set).not.toHaveBeenCalled()
 })
 
 test('ensureSessionFetch mints an anonymous session once and threads the minted cookie onto the next call', async () => {
 	const cookies = fakeCookies()
 	const mintRes = new Response(null, {
-		headers: { 'set-cookie': 'textcaster.session_token=minted; Path=/; HttpOnly; Max-Age=600' }
+		headers: { 'set-cookie': 'rsc.session_token=minted; Path=/; HttpOnly; Max-Age=600' }
 	})
 	const f = vi.fn(async (url: string | URL | Request, ..._rest: unknown[]) => {
 		if (String(url).includes('/sign-in/anonymous')) return mintRes
@@ -92,8 +92,8 @@ test('ensureSessionFetch mints an anonymous session once and threads the minted 
 	// doesn't collapse every visitor into the web server's own bucket.
 	expect(new Headers(mintInit.headers).get('x-forwarded-for')).toBe('203.0.113.5')
 	const actInit = f.mock.calls[1][1] as RequestInit
-	expect(new Headers(actInit.headers).get('cookie')).toBe('textcaster.session_token=minted')
-	expect(cookies.set).toHaveBeenCalledWith('textcaster.session_token', 'minted', {
+	expect(new Headers(actInit.headers).get('cookie')).toBe('rsc.session_token=minted')
+	expect(cookies.set).toHaveBeenCalledWith('rsc.session_token', 'minted', {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
@@ -102,7 +102,7 @@ test('ensureSessionFetch mints an anonymous session once and threads the minted 
 })
 
 test('ensureSessionFetch skips minting when a session cookie already exists', async () => {
-	const cookies = fakeCookies([{ name: 'textcaster.session_token', value: 'existing' }])
+	const cookies = fakeCookies([{ name: 'rsc.session_token', value: 'existing' }])
 	const f = vi.fn(async (..._args: unknown[]) => new Response(null, { status: 201 }))
 	const event = { fetch: f as unknown as typeof fetch, cookies: cookies as unknown as Cookies, url: new URL('http://localhost:5173/'), getClientAddress: () => '203.0.113.5' }
 
@@ -111,7 +111,7 @@ test('ensureSessionFetch skips minting when a session cookie already exists', as
 
 	expect(f).toHaveBeenCalledTimes(1)
 	const init = f.mock.calls[0][1] as RequestInit
-	expect(new Headers(init.headers).get('cookie')).toBe('textcaster.session_token=existing')
+	expect(new Headers(init.headers).get('cookie')).toBe('rsc.session_token=existing')
 })
 
 test('ensureSessionFetch throws when anonymous sign-in fails', async () => {

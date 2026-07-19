@@ -14,7 +14,7 @@
 	}
 </script>
 
-<svelte:head><title>Admin — Users — Textcaster</title></svelte:head>
+<svelte:head><title>Admin — Users — RSC</title></svelte:head>
 
 <h2>Users</h2>
 

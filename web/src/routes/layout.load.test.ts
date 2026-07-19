@@ -19,18 +19,18 @@ test('load forwards the session cookie and returns getMe() alongside the mail fl
 		if (String(input).includes('/health')) return healthResponse(false)
 		return new Response(JSON.stringify({ user: { id: 'u1', handle: 'a' }, isAnonymous: true }), { status: 200 })
 	})
-	const cookies = { getAll: () => [{ name: 'textcaster.session_token', value: 's1' }] }
+	const cookies = { getAll: () => [{ name: 'rsc.session_token', value: 's1' }] }
 	const result = await load({ fetch, cookies, url: new URL('http://x/') } as never)
 	expect(result).toEqual({ me: { user: { id: 'u1', handle: 'a' }, isAnonymous: true }, mailEnabled: false })
 	const [, init] = fetch.mock.calls.find((c) => !String(c[0]).includes('/health')) as [string, RequestInit]
-	expect(new Headers(init.headers).get('cookie')).toBe('textcaster.session_token=s1')
+	expect(new Headers(init.headers).get('cookie')).toBe('rsc.session_token=s1')
 })
 
 test('load degrades to me: null, mailEnabled: false when the core is unreachable', async () => {
 	const fetch = vi.fn(async () => {
 		throw new Error('fetch failed')
 	})
-	const cookies = { getAll: () => [{ name: 'textcaster.session_token', value: 's1' }] }
+	const cookies = { getAll: () => [{ name: 'rsc.session_token', value: 's1' }] }
 	const result = await load({ fetch, cookies, url: new URL('http://x/') } as never)
 	expect(result).toEqual({ me: null, mailEnabled: false })
 })

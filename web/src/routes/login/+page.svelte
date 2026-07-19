@@ -5,11 +5,11 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 </script>
 
-<svelte:head><title>Log in — Textcaster</title></svelte:head>
+<svelte:head><title>Log in — RSC</title></svelte:head>
 
 <div class="lens">
 	<header class="masthead">
-		<a href="/">Textcaster</a>
+		<a href="/">RSC</a>
 		<ThemeToggle />
 	</header>
 

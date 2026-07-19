@@ -2,7 +2,7 @@
 // never loses writing. Callers clear on confirmed submit success only.
 export type Draft = { content?: string }
 
-const PREFIX = 'textcaster:draft:'
+const PREFIX = 'rsc:draft:'
 
 export function loadDraft(key: string): Draft {
 	try {

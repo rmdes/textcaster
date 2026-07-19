@@ -19,7 +19,7 @@ function sessionedEvent(request: Request, fetch: ReturnType<typeof vi.fn>) {
 		request,
 		fetch,
 		url: new URL('http://x/'),
-		cookies: { getAll: () => [{ name: 'textcaster.session_token', value: 's1' }] }
+		cookies: { getAll: () => [{ name: 'rsc.session_token', value: 's1' }] }
 	}
 }
 
@@ -43,14 +43,14 @@ test('follow posts to core (session already present, no mint)', async () => {
 	expect(url).toContain('/me/follows')
 	expect(String((init as { method?: string }).method)).toBe('POST')
 	const headers = new Headers(init.headers)
-	expect(headers.get('cookie')).toBe('textcaster.session_token=s1')
+	expect(headers.get('cookie')).toBe('rsc.session_token=s1')
 	expect(headers.get('origin')).toBe('http://x')
 	expect(JSON.parse(String(init.body))).toEqual({ handle: 'alice' })
 })
 
 test('follow mints an anonymous session first when there is none yet, then relays it', async () => {
 	const mintRes = new Response(null, {
-		headers: { 'set-cookie': 'textcaster.session_token=minted; Path=/; HttpOnly; Max-Age=600' }
+		headers: { 'set-cookie': 'rsc.session_token=minted; Path=/; HttpOnly; Max-Age=600' }
 	})
 	const fetch = vi.fn(async (url: string | URL | Request, ..._rest: unknown[]) =>
 		String(url).includes('/sign-in/anonymous') ? mintRes : new Response(null, { status: 201 })
@@ -61,8 +61,8 @@ test('follow mints an anonymous session first when there is none yet, then relay
 	expect(fetch).toHaveBeenCalledTimes(2) // mint, then the sessioned addFollow call
 	expect(String(fetch.mock.calls[0][0])).toContain('/sign-in/anonymous')
 	const followInit = fetch.mock.calls[1][1] as RequestInit
-	expect(new Headers(followInit.headers).get('cookie')).toBe('textcaster.session_token=minted')
-	expect(event.cookies.set).toHaveBeenCalledWith('textcaster.session_token', 'minted', expect.objectContaining({ path: '/' }))
+	expect(new Headers(followInit.headers).get('cookie')).toBe('rsc.session_token=minted')
+	expect(event.cookies.set).toHaveBeenCalledWith('rsc.session_token', 'minted', expect.objectContaining({ path: '/' }))
 })
 
 test('unfollow deletes the target via the core with the session cookie', async () => {
@@ -73,7 +73,7 @@ test('unfollow deletes the target via the core with the session cookie', async (
 	const [url, init] = fetch.mock.calls[0] as [string, RequestInit]
 	expect(url).toContain('/me/follows/bob')
 	expect(String((init as { method?: string }).method)).toBe('DELETE')
-	expect(new Headers(init.headers).get('cookie')).toBe('textcaster.session_token=s1')
+	expect(new Headers(init.headers).get('cookie')).toBe('rsc.session_token=s1')
 })
 
 test('import NEVER mints a session — registered-only, core 403s anonymous', async () => {

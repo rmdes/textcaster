@@ -20,7 +20,7 @@ function event(method: string, path: string, search = '', body?: string) {
 		url: new URL(`http://web.test/api/auth/${path}${search}`),
 		getClientAddress: () => '203.0.113.9',
 		cookies: {
-			getAll: () => [{ name: 'textcaster.session_token', value: 'abc' }],
+			getAll: () => [{ name: 'rsc.session_token', value: 'abc' }],
 			set: (n: string, v: string, o: Record<string, unknown>) => setCookies.push([n, v, o]),
 			delete: (n: string) => deleted.push(n)
 		},
@@ -34,7 +34,7 @@ test('proxies a GET verify-link to core with cookie + origin, relaying the 302 a
 	global.fetch = vi.fn(async (url: string, init: RequestInit) => {
 		captured.url = url
 		captured.init = init
-		return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': 'textcaster.session_token=NEW; Path=/; Max-Age=3600; HttpOnly' } })
+		return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': 'rsc.session_token=NEW; Path=/; Max-Age=3600; HttpOnly' } })
 	}) as unknown as typeof fetch
 
 	const e = event('GET', 'verify-email', '?token=T&callbackURL=/')
@@ -43,7 +43,7 @@ test('proxies a GET verify-link to core with cookie + origin, relaying the 302 a
 	// forwarded to core with the full path+query, cookie, origin, client addr
 	expect(captured.url).toBe('http://localhost:8787/api/auth/verify-email?token=T&callbackURL=/')
 	const h = new Headers(captured.init!.headers)
-	expect(h.get('cookie')).toContain('textcaster.session_token=abc')
+	expect(h.get('cookie')).toContain('rsc.session_token=abc')
 	expect(h.get('origin')).toBe('http://web.test')
 	expect(h.get('x-forwarded-for')).toBe('203.0.113.9')
 	expect(captured.init!.redirect).toBe('manual') // relay, don't follow
@@ -51,7 +51,7 @@ test('proxies a GET verify-link to core with cookie + origin, relaying the 302 a
 	// the 302 + Location reach the browser, and the new session cookie is relayed
 	expect(res.status).toBe(302)
 	expect(res.headers.get('location')).toBe('/')
-	expect(e._setCookies.some(([n, v]) => n === 'textcaster.session_token' && v === 'NEW')).toBe(true)
+	expect(e._setCookies.some(([n, v]) => n === 'rsc.session_token' && v === 'NEW')).toBe(true)
 })
 
 test('proxies a POST with its body to core', async () => {

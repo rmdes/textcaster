@@ -40,5 +40,5 @@
 <footer class="site-footer">
 	<a href="/about">About</a>
 	<a href="/users/rss.xml">Feed</a>
-	<a href="https://github.com/rmdes/textcaster">Source</a>
+	<a href="https://github.com/rmdes/rsc">Source</a>
 </footer>

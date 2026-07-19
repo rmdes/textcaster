@@ -14,7 +14,7 @@ function sessionedEvent(request: Request, fetch: ReturnType<typeof vi.fn>) {
 		request,
 		fetch,
 		url: new URL('http://x/'),
-		cookies: { getAll: () => [{ name: 'textcaster.session_token', value: 's1' }] }
+		cookies: { getAll: () => [{ name: 'rsc.session_token', value: 's1' }] }
 	}
 }
 
@@ -25,13 +25,13 @@ test('compose posts content and redirects (session already present, no mint)', a
 	}) // redirect throws
 	expect(fetch).toHaveBeenCalledTimes(1) // no mint call — the session cookie already exists
 	const init = fetch.mock.calls[0][1] as RequestInit
-	expect(new Headers(init.headers).get('cookie')).toBe('textcaster.session_token=s1')
+	expect(new Headers(init.headers).get('cookie')).toBe('rsc.session_token=s1')
 	expect(JSON.parse(String(init.body))).toEqual({ content: 'hi' })
 })
 
 test('compose mints an anonymous session first when there is none yet', async () => {
 	const mintRes = new Response(null, {
-		headers: { 'set-cookie': 'textcaster.session_token=minted; Path=/; HttpOnly; Max-Age=600' }
+		headers: { 'set-cookie': 'rsc.session_token=minted; Path=/; HttpOnly; Max-Age=600' }
 	})
 	const fetch = vi.fn(async (url: string | URL | Request, ..._rest: unknown[]) =>
 		String(url).includes('/sign-in/anonymous') ? mintRes : new Response(null, { status: 201 })
@@ -46,7 +46,7 @@ test('compose mints an anonymous session first when there is none yet', async ()
 	await expect(actions.compose(event as never)).rejects.toMatchObject({ status: 303 })
 	expect(fetch).toHaveBeenCalledTimes(2) // mint, then the sessioned createPost call
 	const postInit = fetch.mock.calls[1][1] as RequestInit
-	expect(new Headers(postInit.headers).get('cookie')).toBe('textcaster.session_token=minted')
+	expect(new Headers(postInit.headers).get('cookie')).toBe('rsc.session_token=minted')
 })
 
 test('compose fails without content', async () => {

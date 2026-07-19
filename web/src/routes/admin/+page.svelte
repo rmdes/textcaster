@@ -4,7 +4,7 @@
 	let { data }: { data: PageData } = $props()
 </script>
 
-<svelte:head><title>Admin — Textcaster</title></svelte:head>
+<svelte:head><title>Admin — RSC</title></svelte:head>
 
 <h2>Overview</h2>
 

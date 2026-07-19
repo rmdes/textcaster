@@ -20,19 +20,19 @@ test('a never-saved key loads as an empty draft', () => {
 })
 
 test('corrupt stored JSON loads as an empty draft', () => {
-	store.set('textcaster:draft:compose', '{nope')
+	store.set('rsc:draft:compose', '{nope')
 	expect(loadDraft('compose')).toEqual({})
 })
 
 test('a non-object stored value loads as an empty draft', () => {
-	store.set('textcaster:draft:compose', '123')
+	store.set('rsc:draft:compose', '123')
 	expect(loadDraft('compose')).toEqual({})
 })
 
 test('saving an all-blank draft removes the stored entry', () => {
 	saveDraft('compose', { content: 'x' })
 	saveDraft('compose', { content: '  ' })
-	expect(store.has('textcaster:draft:compose')).toBe(false)
+	expect(store.has('rsc:draft:compose')).toBe(false)
 })
 
 test('keys are namespaced per composer', () => {

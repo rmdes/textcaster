@@ -6,7 +6,7 @@ function saveEvent(fields: Record<string, string>, fetch: ReturnType<typeof vi.f
 		request: new Request('http://x/admin/settings?/save', { method: 'POST', body: new URLSearchParams(fields) }),
 		fetch,
 		url: new URL('http://x/admin/settings'),
-		cookies: { getAll: () => [{ name: 'textcaster.session_token', value: 's1' }] }
+		cookies: { getAll: () => [{ name: 'rsc.session_token', value: 's1' }] }
 	}
 }
 

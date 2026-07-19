@@ -56,7 +56,7 @@
 </script>
 
 <svelte:head>
-	<title>@{data.handle} — Textcaster</title>
+	<title>@{data.handle} — RSC</title>
 	<!-- Readers pick the FIRST alternate link: on an author page that is the
 	     author's feed (remote profiles proxy-redirect to their canonical one);
 	     the layout's firehose link follows as the site-wide fallback. -->
@@ -69,7 +69,7 @@
 
 <div class="lens">
 	<header class="masthead">
-		<a href="/">Textcaster</a>
+		<a href="/">RSC</a>
 		<ThemeToggle />
 	</header>
 
