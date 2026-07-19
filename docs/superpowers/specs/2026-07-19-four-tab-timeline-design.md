@@ -1,10 +1,12 @@
 # Four-tab web timeline (SP2) — design
 
 **Milestone:** Per-user feeds / feed-reader (sub-project 2 of 3)
-**Date:** 2026-07-19 · **rev 2** (rev 1: clean-context correctness + ponytail
+**Date:** 2026-07-19 · **rev 3** (rev 1: clean-context correctness + ponytail
 reviews folded; rev 2: maintainer pass — existing Personal-river test assertion
-updates with self-inclusion — see
-`../reviews/2026-07-19-four-tab-timeline-spec-review.md`)
+updates with self-inclusion; rev 3: plan-review correction — deletePost never
+redirected, action-URL alone carries the tab — see
+`../reviews/2026-07-19-four-tab-timeline-spec-review.md` and
+`../reviews/2026-07-19-four-tab-timeline-plan-review.md`)
 **Depends on:** SP1 engine (commits `8ffd69a..734d8d0` on main) — see
 `2026-07-19-per-user-feeds-engine-design.md` for the milestone model.
 
@@ -128,7 +130,9 @@ No route or service changes.
   the query string, so today a submit from `/?tab=local` would land on the
   default): form `action` attributes become `?tab=<tab>&/compose` etc., and
   success redirects carry the tab — `redirect(303, '/?tab=<tab>')` for
-  `compose`/`deletePost`. `addRemote` instead redirects to
+  `compose` (rev 3: `deletePost` has no redirect today and keeps none — its
+  form action URL alone preserves the tab in both no-JS and enhanced
+  submits). `addRemote` instead redirects to
   `/?tab=public&feed=<handle>` regardless of origin: the flash copy ("its
   posts appear in your timeline") is only true on Public — the form itself is
   repointed in SP3.

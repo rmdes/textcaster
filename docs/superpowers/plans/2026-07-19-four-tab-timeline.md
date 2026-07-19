@@ -2,7 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Spec:** `docs/superpowers/specs/2026-07-19-four-tab-timeline-design.md` (**rev 2**)
+**Spec:** `docs/superpowers/specs/2026-07-19-four-tab-timeline-design.md` (**rev 3**)
+**Rev 1** — clean-context correctness review + ponytail review folded
+(`docs/superpowers/reviews/2026-07-19-four-tab-timeline-plan-review.md`):
+fixture typing fix, thread-select coverage, merged web-plumbing task, trimmed
+tests, `TABS`-derived tab links.
 
 **Goal:** Turn the web home (`/`) into a four-tab timeline — Local · Federated · Personal · Public — with per-tab live SSE filtering and auth-dependent default tab.
 
@@ -35,7 +39,17 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to the `describe('timeline tabs', …)` block in `core/test/timeline-tabs.test.ts` (fixture already creates alice/webfeed/instance + three posts). Add the HTTP-layer test using the same harness style as `core/test/api.test.ts` — add these imports at the top:
+In `core/test/timeline-tabs.test.ts`:
+
+1. **Fixture typing (typecheck gate):** `makeAuth` requires the concrete class, not the interface — `let repo: Repository` would fail `npm run -w core typecheck` with TS2345. Change the declaration to the type `makeAuth` takes (import it the same way `core/test/auth-helper.ts` does):
+
+```ts
+import { createSqliteRepository, type SqliteRepository } from '../src/storage/sqlite.ts'
+```
+
+and `let repo: Repository` → `let repo: SqliteRepository`. Delete the now-unused `Repository` type import.
+
+2. **Add harness imports** (same style as `core/test/api.test.ts`):
 
 ```ts
 import { createEventBus } from '../src/domain/bus.ts'
@@ -44,32 +58,30 @@ import { createApp } from '../src/api/app.ts'
 import { makeAuth } from './auth-helper.ts'
 ```
 
-New tests inside the describe block:
+3. **New tests** inside the `describe('timeline tabs', …)` block (fixture already creates alice/webfeed/instance + three posts). The HTTP test also closes SP1's deferred "no HTTP-layer test for `/timeline` source/feed_type params" minor; the `getThread` test covers a second select site (the shared mapper can't catch a select list that forgot the column):
 
 ```ts
-it('entries carry author.feedType (instance / webfeed / local-null)', async () => {
-  const tl = await repo.getTimeline(10, undefined, {})
-  const byId = new Map(tl.map((e) => [e.id, e.author.feedType]))
-  expect(byId.get(instancePostId)).toBe('instance')
-  expect(byId.get(webfeedPostId)).toBe('webfeed')
-  expect(byId.get(localPostId)).toBeNull()
-})
+  it('GET /timeline serves author.feedType; source/feed_type params filter over HTTP', async () => {
+    const bus = createEventBus()
+    const app = createApp({ service: createService(repo, bus), bus, token: 'secret', auth: makeAuth(repo), users: repo })
+    const all = await app.request('/timeline')
+    expect(all.status).toBe(200)
+    const body = await all.json()
+    const feedTypeOf = (id: string) => body.timeline.find((e: { id: string }) => e.id === id).author.feedType
+    expect(feedTypeOf(instancePostId)).toBe('instance')
+    expect(feedTypeOf(webfeedPostId)).toBe('webfeed')
+    expect(feedTypeOf(localPostId)).toBeNull()
+    const fed = await (await app.request('/timeline?feed_type=instance')).json()
+    expect(fed.timeline.map((e: { id: string }) => e.id)).toEqual([instancePostId])
+    const local = await (await app.request('/timeline?source=local')).json()
+    expect(local.timeline.map((e: { id: string }) => e.id)).toEqual([localPostId])
+  })
 
-it('GET /timeline serves author.feedType and the source/feed_type params over HTTP', async () => {
-  const bus = createEventBus()
-  const app = createApp({ service: createService(repo, bus), bus, token: 'secret', auth: makeAuth(repo), users: repo })
-  const fed = await app.request('/timeline?feed_type=instance')
-  expect(fed.status).toBe(200)
-  const fedBody = await fed.json()
-  expect(fedBody.timeline.map((e: { id: string }) => e.id)).toEqual([instancePostId])
-  expect(fedBody.timeline[0].author.feedType).toBe('instance')
-  const local = await (await app.request('/timeline?source=local')).json()
-  expect(local.timeline.map((e: { id: string }) => e.id)).toEqual([localPostId])
-  expect(local.timeline[0].author.feedType).toBeNull()
-})
+  it('getThread entries carry author.feedType (second select site)', async () => {
+    const thread = await repo.getThread(webfeedPostId)
+    expect(thread[0].author.feedType).toBe('webfeed')
+  })
 ```
-
-(The HTTP test also closes SP1's deferred "no HTTP-layer test for `/timeline` source/feed_type params" minor.)
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -98,13 +110,13 @@ type JoinedRow = PostsTable & { u_id: string; u_kind: 'local' | 'remote'; u_hand
       .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id', 'users.feed_type as u_feed_type'])
 ```
 
-If `FeedType` is not already imported in sqlite.ts, add it to the existing `types.ts` type-import line. No cast anywhere — `UsersTable.feed_type` is already `FeedType | null`.
+`FeedType` is already imported in sqlite.ts. No cast anywhere — `UsersTable.feed_type` is already `FeedType | null`.
 
 - [ ] **Step 4: Run tests + typecheck**
 
 Run: `npm run -w core test -- timeline-tabs` → PASS.
-Run: `npm run -w core test` → full suite green (baseline 389+; a parallel session may have added more — only YOUR files' failures block).
-Run: `npm run -w core typecheck` → 0 errors.
+Run: `npm run -w core test` → full suite green (a parallel session may have added tests — only YOUR files' failures block).
+Run: `npm run -w core typecheck` → 0 errors (this catches both the fixture typing and any missed select site's type).
 
 - [ ] **Step 5: Commit**
 
@@ -125,9 +137,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 1's fixture state (alice authors `localPostId`).
-- Produces: `getTimeline(limit, before, { followedBy })` returns the follower's own posts too. Web Task 5's Personal tab and the existing `/u/:handle/following` page inherit this semantics (accepted in spec rev 1).
+- Produces: `getTimeline(limit, before, { followedBy })` returns the follower's own posts too. Web Task 4's Personal tab and the existing `/u/:handle/following` page inherit this semantics (accepted in spec rev 1).
 
-- [ ] **Step 1: Update the existing assertion + add the new test**
+- [ ] **Step 1: Update the existing assertion**
 
 In `core/test/timeline-tabs.test.ts`, the Personal-river test currently expects exactly `[webfeedPostId]`. **This red is planned — do NOT "fix" it by weakening the implementation.** Replace the test with:
 
@@ -146,7 +158,7 @@ Expected: FAIL — received `[webfeedPostId]`, missing `localPostId` (no self-in
 
 - [ ] **Step 3: Implement**
 
-In `getTimeline`'s followedBy branch, replace the single `in`-subquery where-clause with an OR (keep the instance-exclusion clause below it untouched):
+In `getTimeline`'s followedBy branch, replace the single `in`-subquery where-clause with an OR (keep the instance-exclusion clause below it untouched). Kysely 0.29 supports `eb('col', 'in', eb.selectFrom(...))` inside `eb.or([...])` — verified against the installed package:
 
 ```ts
     if (filter?.followedBy) {
@@ -167,7 +179,7 @@ In `getTimeline`'s followedBy branch, replace the single `in`-subquery where-cla
 - [ ] **Step 4: Run tests + typecheck**
 
 Run: `npm run -w core test -- timeline-tabs` → PASS (all tests, including the untouched Local/Federated/Public ones).
-Run: `npm run -w core test` → full suite green. If `service.test.ts` / `api-follows.test.ts` fail, STOP and re-read them — a maintainer pass verified they are unaffected (follower authors have no posts there); a failure means your OR clause is wrong.
+Run: `npm run -w core test` → full suite green. The only other `followedBy` content assertion is `service.test.ts` (follower authors no posts — self-inclusion is a no-op there); if it fails, your OR clause is wrong — STOP and re-read.
 Run: `npm run -w core typecheck` → 0 errors.
 
 - [ ] **Step 5: Commit**
@@ -181,16 +193,22 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: Web — `feedType` on the entry type + two new lens kinds
+### Task 3: Web plumbing — entry `feedType`, lens kinds, tab helper, timeline params
 
 **Files:**
 - Modify: `web/src/lib/types.ts` (author object type, line 10)
 - Modify: `web/src/lib/lens.ts`
-- Test: `web/src/lib/lens.test.ts`
+- Modify: `web/src/lib/api.ts` (`getTimeline`, lines 21-38)
+- Create: `web/src/lib/tabs.ts`
+- Test: `web/src/lib/lens.test.ts`, `web/src/lib/api.test.ts` (extend), `web/src/lib/tabs.test.ts` (new)
 
 **Interfaces:**
 - Consumes: Task 1's `author.feedType` over the wire (types only here — no fetch changes).
-- Produces: `TimelineEntry['author'].feedType?: 'person' | 'webfeed' | 'instance' | null`; `Lens` union gains `{ kind: 'source'; source: 'local' }` and `{ kind: 'feedType'; feedType: 'instance' }`; `keepEvent` handles both. Task 5 filters `getFollowing` results on `feedType`; Task 6 builds lenses from these kinds.
+- Produces (Tasks 4/5 depend on these exact names):
+  - `TimelineEntry['author'].feedType?: 'person' | 'webfeed' | 'instance' | null`
+  - `Lens` union gains `{ kind: 'source'; source: 'local' }` and `{ kind: 'feedType'; feedType: 'instance' }`; `keepEvent` handles both.
+  - `getTimeline(f, opts)` accepts `source?: 'local'` / `feedType?: 'instance'` → emits `source=local` / `feed_type=instance` params.
+  - `tabs.ts`: `export const TABS = ['local', 'federated', 'personal', 'public'] as const`; `export type Tab = (typeof TABS)[number]`; `export function resolveTab(raw: string | null, me: { isAnonymous: boolean } | null): Tab`; `export function tabFilter(tab: Tab, meHandle: string | undefined): { source?: 'local'; feedType?: 'instance'; followedBy?: string }`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -210,10 +228,60 @@ test('feedType lens keeps only instance authors', () => {
 })
 ```
 
+Create `web/src/lib/tabs.test.ts`:
+
+```ts
+import { test, expect } from 'vitest'
+import { resolveTab, tabFilter } from './tabs'
+
+const registered = { isAnonymous: false }
+const anon = { isAnonymous: true }
+
+test('defaults: registered → personal, anon → public, guest → public', () => {
+  expect(resolveTab(null, registered)).toBe('personal')
+  expect(resolveTab(null, anon)).toBe('public')
+  expect(resolveTab(null, null)).toBe('public')
+})
+
+test('valid explicit tabs pass through; anon may select personal', () => {
+  expect(resolveTab('local', null)).toBe('local')
+  expect(resolveTab('personal', anon)).toBe('personal')
+})
+
+test('invalid tab and guest-on-personal fall back to the viewer default', () => {
+  expect(resolveTab('bogus', registered)).toBe('personal')
+  expect(resolveTab('bogus', null)).toBe('public')
+  expect(resolveTab('personal', null)).toBe('public')
+})
+
+test('tabFilter maps each tab to its getTimeline opts', () => {
+  expect(tabFilter('local', undefined)).toEqual({ source: 'local' })
+  expect(tabFilter('federated', undefined)).toEqual({ feedType: 'instance' })
+  expect(tabFilter('personal', 'alice')).toEqual({ followedBy: 'alice' })
+  expect(tabFilter('public', undefined)).toEqual({})
+})
+```
+
+Append to `web/src/lib/api.test.ts` (match the file's standing mock style — `as unknown as typeof fetch`, not `as never`):
+
+```ts
+test('getTimeline threads source and feed_type params', async () => {
+  const f = vi.fn(async () => new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 }))
+  await getTimeline(f as unknown as typeof fetch, { source: 'local' })
+  expect(String(f.mock.calls[0][0])).toContain('source=local')
+  await getTimeline(f as unknown as typeof fetch, { feedType: 'instance' })
+  expect(String(f.mock.calls[1][0])).toContain('feed_type=instance')
+})
+```
+
 - [ ] **Step 2: Run to verify failure**
 
 Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- lens`
-Expected: FAIL — TS-invalid lens kinds run under type stripping, so the failure is behavioral: `keepEvent` falls through to the `followed` branch and throws (`lens.followIds` is undefined) or returns wrong values.
+Expected: FAIL — under type stripping the unknown lens kinds fall through to the `followed` branch: TypeError on `lens.followIds`.
+Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- tabs`
+Expected: FAIL — `Cannot find module './tabs'`.
+Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- api`
+Expected: FAIL — built URL lacks `source=local` (opt silently ignored).
 
 - [ ] **Step 3: Implement**
 
@@ -243,94 +311,6 @@ export function keepEvent(entry: TimelineEntry, lens: Lens): boolean {
   return lens.followIds.has(entry.author.id)
 }
 ```
-
-- [ ] **Step 4: Run tests + typecheck**
-
-Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- lens` → PASS.
-Run: `docker compose exec -T web npm run check -w web` → 0 errors.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add web/src/lib/types.ts web/src/lib/lens.ts web/src/lib/lens.test.ts
-git commit -m "web: author.feedType on entries; source + feedType lens kinds
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
-```
-
----
-
-### Task 4: Web — `getTimeline` filter opts + pure tab-resolution helper
-
-**Files:**
-- Modify: `web/src/lib/api.ts` (`getTimeline`, lines 21-38)
-- Create: `web/src/lib/tabs.ts`
-- Test: `web/src/lib/tabs.test.ts` (new), `web/src/lib/api.test.ts` (extend)
-
-**Interfaces:**
-- Consumes: nothing from other tasks (pure web plumbing).
-- Produces (Task 5/6 depend on these exact names):
-  - `getTimeline(f, opts)` accepts `source?: 'local'` and `feedType?: 'instance'` → emits `source=local` / `feed_type=instance` query params.
-  - `tabs.ts`: `export const TABS = ['local', 'federated', 'personal', 'public'] as const`; `export type Tab = (typeof TABS)[number]`; `export function resolveTab(raw: string | null, me: { isAnonymous: boolean } | null): Tab`; `export function tabFilter(tab: Tab, meHandle: string | undefined): { source?: 'local'; feedType?: 'instance'; followedBy?: string }`.
-
-- [ ] **Step 1: Write the failing tests**
-
-Create `web/src/lib/tabs.test.ts`:
-
-```ts
-import { test, expect } from 'vitest'
-import { resolveTab, tabFilter } from './tabs'
-
-const registered = { isAnonymous: false }
-const anon = { isAnonymous: true }
-
-test('defaults: registered → personal, anon → public, guest → public', () => {
-  expect(resolveTab(null, registered)).toBe('personal')
-  expect(resolveTab(null, anon)).toBe('public')
-  expect(resolveTab(null, null)).toBe('public')
-})
-
-test('valid explicit tabs pass through; anon may select personal', () => {
-  expect(resolveTab('local', null)).toBe('local')
-  expect(resolveTab('federated', registered)).toBe('federated')
-  expect(resolveTab('public', registered)).toBe('public')
-  expect(resolveTab('personal', anon)).toBe('personal')
-})
-
-test('invalid tab and guest-on-personal fall back to the viewer default', () => {
-  expect(resolveTab('bogus', registered)).toBe('personal')
-  expect(resolveTab('bogus', null)).toBe('public')
-  expect(resolveTab('personal', null)).toBe('public')
-})
-
-test('tabFilter maps each tab to its getTimeline opts', () => {
-  expect(tabFilter('local', undefined)).toEqual({ source: 'local' })
-  expect(tabFilter('federated', undefined)).toEqual({ feedType: 'instance' })
-  expect(tabFilter('personal', 'alice')).toEqual({ followedBy: 'alice' })
-  expect(tabFilter('public', undefined)).toEqual({})
-})
-```
-
-Append to `web/src/lib/api.test.ts` (match its existing mocked-fetch style — read the file first):
-
-```ts
-test('getTimeline threads source and feed_type params', async () => {
-  const f = vi.fn(async () => new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 }))
-  await getTimeline(f as never, { source: 'local' })
-  expect(String(f.mock.calls[0][0])).toContain('source=local')
-  await getTimeline(f as never, { feedType: 'instance' })
-  expect(String(f.mock.calls[1][0])).toContain('feed_type=instance')
-})
-```
-
-- [ ] **Step 2: Run to verify failure**
-
-Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- tabs`
-Expected: FAIL — `Cannot find module './tabs'`.
-Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- api`
-Expected: FAIL — the built URL lacks `source=local` (opt silently ignored).
-
-- [ ] **Step 3: Implement**
 
 Create `web/src/lib/tabs.ts`:
 
@@ -373,6 +353,7 @@ and after the existing three `params.push` lines:
 
 - [ ] **Step 4: Run tests + typecheck**
 
+Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- lens` → PASS.
 Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- tabs` → PASS.
 Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- api` → PASS.
 Run: `docker compose exec -T web npm run check -w web` → 0 errors.
@@ -380,27 +361,27 @@ Run: `docker compose exec -T web npm run check -w web` → 0 errors.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/src/lib/tabs.ts web/src/lib/tabs.test.ts web/src/lib/api.ts web/src/lib/api.test.ts
-git commit -m "web: tab resolution helper + source/feed_type timeline params
+git add web/src/lib/types.ts web/src/lib/lens.ts web/src/lib/lens.test.ts web/src/lib/tabs.ts web/src/lib/tabs.test.ts web/src/lib/api.ts web/src/lib/api.test.ts
+git commit -m "web: feedType on entries; source/feedType lenses; tab helper; timeline filter params
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 5: Web — home load resolves tabs; actions preserve them
+### Task 4: Web — home load resolves tabs; actions preserve them
 
 **Files:**
 - Modify: `web/src/routes/+page.server.ts`
 - Test: `web/src/routes/page.load.test.ts`, `web/src/routes/page.actions.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveTab` / `tabFilter` / `TABS` (Task 4), `getFollowing` (`$lib/api`, returns authors with `feedType` after Task 3), layout `me` via `await parent()` (`+layout.server.ts` returns `{ me, mailEnabled }`).
-- Produces (Task 6 renders these): load returns `tab: Tab` always (including the catch branch) and `followIds?: string[]` (only on personal + first page: `[me.user.id, ...following-minus-instances]`). Actions: `compose` redirects to `/?tab=<valid tab>` (else `/`); `addRemote` redirects to `/?tab=public&feed=<handle>`.
+- Consumes: `resolveTab` / `tabFilter` / `TABS` (Task 3), `getFollowing` (`$lib/api`, returns authors with `feedType` after Task 3), layout `me` via `await parent()` (`+layout.server.ts` returns `{ me, mailEnabled }`).
+- Produces (Task 5 renders these): load returns `tab: Tab` always (including the catch branch) and `followIds?: string[]` (only on personal + first page: `[me.user.id, ...following-minus-instances]`). Actions: `compose` redirects to `/?tab=<valid tab>` (else `/`); `addRemote` redirects to `/?tab=public&feed=<handle>`. `deletePost` stays redirect-free (`{ removed: true }`) — its form action URL alone preserves the tab (no-JS re-renders land on the POSTed URL; enhanced submits don't navigate). Spec rev 3 reflects this.
 
 - [ ] **Step 1: Write the failing tests**
 
-`web/src/routes/page.load.test.ts` — the existing three tests call `load({ fetch, url } as never)`; **add `parent: async () => ({ me: null })` to each** and add `tab: 'public'` to the coreDown `toEqual` object. Then append (reuse the file's `entry` helper):
+`web/src/routes/page.load.test.ts` — the existing three tests call `load({ fetch, url } as never)`; **add `parent: async () => ({ me: null })` to each** (expected amendment, not scope drift — the new load awaits `parent()`), and add `tab: 'public'` to the coreDown `toEqual` object. Then append:
 
 ```ts
 const meOf = (handle: string, isAnonymous = false) => ({
@@ -409,75 +390,65 @@ const meOf = (handle: string, isAnonymous = false) => ({
 })
 
 test('registered default resolves to personal: followed_by filter, self-first followIds, instances excluded', async () => {
-	const fetch = vi.fn(async (url: string | URL) => {
-		const s = String(url)
-		if (s.includes('/follows'))
-			return new Response(
-				JSON.stringify({
-					following: [
-						{ id: 'f1', handle: 'w', displayName: 'W', kind: 'remote', feedType: 'webfeed' },
-						{ id: 'f2', handle: 'i', displayName: 'I', kind: 'remote', feedType: 'instance' }
-					]
-				}),
-				{ status: 200 }
-			)
-		if (s.includes('/peers')) return new Response(JSON.stringify({ peers: [] }), { status: 200 })
-		return new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 })
-	})
+	const fetch = vi.fn(async (url: string | URL) =>
+		String(url).includes('/follows')
+			? new Response(
+					JSON.stringify({
+						following: [
+							{ id: 'f1', handle: 'w', displayName: 'W', kind: 'remote', feedType: 'webfeed' },
+							{ id: 'f2', handle: 'i', displayName: 'I', kind: 'remote', feedType: 'instance' }
+						]
+					}),
+					{ status: 200 }
+				)
+			: new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 })
+	)
 	const result = (await load({ fetch, url: new URL('http://x/'), parent: async () => ({ me: meOf('alice') }) } as never)) as {
 		tab: string
 		followIds?: string[]
 	}
-	expect(String(fetch.mock.calls[0][0])).toContain('followed_by=alice')
+	const calls = fetch.mock.calls.map((c) => String(c[0]))
+	expect(calls.some((s) => s.includes('followed_by=alice'))).toBe(true)
 	expect(result.tab).toBe('personal')
 	expect(result.followIds).toEqual(['me1', 'f1'])
 })
 
 test('paginated personal load skips the follows fetch', async () => {
-	const fetch = vi.fn(async (url: string | URL) =>
-		String(url).includes('/peers')
-			? new Response(JSON.stringify({ peers: [] }), { status: 200 })
-			: new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 })
-	)
+	const fetch = vi.fn(async (..._args: unknown[]) => new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 }))
 	const result = (await load({
 		fetch,
 		url: new URL('http://x/?tab=personal&before=ts~p9'),
 		parent: async () => ({ me: meOf('alice') })
 	} as never)) as { tab: string; followIds?: string[] }
-	expect(fetch.mock.calls.map((c) => String(c[0]))).not.toContainEqual(expect.stringContaining('/follows'))
+	expect(fetch.mock.calls.map((c) => String(c[0])).some((s) => s.includes('/follows'))).toBe(false)
 	expect(result.tab).toBe('personal')
 	expect(result.followIds).toBeUndefined()
 })
 
-test('explicit ?tab=local filters by source; guest keeps public default', async () => {
-	const fetch = vi.fn(async (url: string | URL) =>
-		String(url).includes('/peers')
-			? new Response(JSON.stringify({ peers: [] }), { status: 200 })
-			: new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 })
-	)
+test('explicit ?tab=local filters by source; guest-on-personal keeps the public firehose', async () => {
+	const fetch = vi.fn(async (..._args: unknown[]) => new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 }))
 	const local = (await load({ fetch, url: new URL('http://x/?tab=local'), parent: async () => ({ me: null }) } as never)) as { tab: string }
-	expect(String(fetch.mock.calls[0][0])).toContain('source=local')
+	expect(fetch.mock.calls.map((c) => String(c[0])).some((s) => s.includes('source=local'))).toBe(true)
 	expect(local.tab).toBe('local')
 	const guest = (await load({ fetch, url: new URL('http://x/?tab=personal'), parent: async () => ({ me: null }) } as never)) as { tab: string }
-	expect(guest.tab).toBe('public') // guest-on-personal falls back; no followed_by call
+	expect(guest.tab).toBe('public')
+	expect(fetch.mock.calls.map((c) => String(c[0])).some((s) => s.includes('followed_by'))).toBe(false)
 })
 ```
 
-`web/src/routes/page.actions.test.ts` — append (reuse `formRequest`/`sessionedEvent` helpers; note `sessionedEvent` pins `url: new URL('http://x/')`, so override it):
+(No `/peers` mock branches: `getPeers` is `.catch(() => [])`-guarded and the default `{timeline...}` JSON parses harmlessly for it — same as the existing tests.)
+
+`web/src/routes/page.actions.test.ts` — append (reuse `formRequest`/`sessionedEvent` helpers; `sessionedEvent` pins `url: new URL('http://x/')`, so override it):
 
 ```ts
-test('compose redirects back to the active tab', async () => {
+test('compose redirects back to the active tab; invalid tab params are dropped', async () => {
 	const fetch = vi.fn(async (..._args: unknown[]) => new Response(null, { status: 201 }))
-	const event = sessionedEvent(formRequest('compose', { content: 'hi' }), fetch)
-	event.url = new URL('http://x/?tab=local&/compose')
-	await expect(actions.compose(event as never)).rejects.toMatchObject({ status: 303, location: '/?tab=local' })
-})
-
-test('compose ignores an invalid tab param on redirect', async () => {
-	const fetch = vi.fn(async (..._args: unknown[]) => new Response(null, { status: 201 }))
-	const event = sessionedEvent(formRequest('compose', { content: 'hi' }), fetch)
-	event.url = new URL('http://x/?tab=evil&/compose')
-	await expect(actions.compose(event as never)).rejects.toMatchObject({ status: 303, location: '/' })
+	const good = sessionedEvent(formRequest('compose', { content: 'hi' }), fetch)
+	good.url = new URL('http://x/?tab=local&/compose')
+	await expect(actions.compose(good as never)).rejects.toMatchObject({ status: 303, location: '/?tab=local' })
+	const bad = sessionedEvent(formRequest('compose', { content: 'hi' }), fetch)
+	bad.url = new URL('http://x/?tab=evil&/compose')
+	await expect(actions.compose(bad as never)).rejects.toMatchObject({ status: 303, location: '/' })
 })
 
 test('addRemote redirects to the public tab where the new feed is visible', async () => {
@@ -490,13 +461,13 @@ test('addRemote redirects to the public tab where the new feed is visible', asyn
 - [ ] **Step 2: Run to verify failure**
 
 Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- page.load`
-Expected: FAIL — `result.tab` undefined; personal test's first fetch call lacks `followed_by`.
+Expected: FAIL — `result.tab` undefined; no `followed_by` in any call.
 Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web -- page.actions`
 Expected: FAIL — compose redirect location is `/`, addRemote's is `/?feed=news`.
 
 - [ ] **Step 3: Implement**
 
-Replace `web/src/routes/+page.server.ts`'s load + the two redirects (deletePost action unchanged):
+Replace `web/src/routes/+page.server.ts`'s load and the two redirect lines (deletePost action unchanged):
 
 ```ts
 import type { PageServerLoad } from './$types'
@@ -514,8 +485,7 @@ export const load: PageServerLoad = async ({ fetch, url, parent }) => {
 	const { me } = await parent()
 	const tab = resolveTab(url.searchParams.get('tab'), me)
 	try {
-		// Timeline fetch FIRST (tests assert on fetch.mock.calls[0]); followIds
-		// feed the live lens only, and LiveTimeline mounts on the first page only.
+		// followIds feed the live lens only, and LiveTimeline mounts on the first page only.
 		const timelineP = getTimeline(fetch, { before, ...tabFilter(tab, me?.user.handle) })
 		const followingP = tab === 'personal' && isFirstPage && me ? getFollowing(fetch, me.user.handle) : Promise.resolve(null)
 		const [{ timeline, nextCursor }, following] = await Promise.all([timelineP, followingP])
@@ -566,7 +536,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: Web — tab bar UI, per-tab live lens, personal empty state
+### Task 5: Web — tab bar UI, per-tab live lens, personal empty state
 
 **Implementer note:** UI task — invoke `ui-ux-pro-max:ui-ux-pro-max` first and follow `design-system/textcaster/MASTER.md`; consult `svelte-skills:svelte-runes` for `$derived.by`.
 
@@ -574,27 +544,21 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `web/src/routes/+page.svelte`
 
 **Interfaces:**
-- Consumes: `data.tab`, `data.followIds` (Task 5), `keepEvent`/`Lens` (Task 3). `data.me` is already merged from the layout.
+- Consumes: `data.tab`, `data.followIds` (Task 4), `keepEvent`/`Lens`/`TABS` (Task 3). `data.me` is already merged from the layout.
 - Produces: the visible four-tab home. No downstream task.
 
 - [ ] **Step 1: Script changes**
 
-In the `<script>` block: add imports and the lens; gate `onPost`.
+In the `<script>` block, add imports:
 
 ```ts
 	import { keepEvent, type Lens } from '$lib/lens'
+	import { TABS } from '$lib/tabs'
 ```
 
-After the `posts` derived:
+After the `posts` derived, add the lens and replace the existing `onPost` (keep a single definition):
 
 ```ts
-	const TAB_LINKS = [
-		{ tab: 'local', label: 'Local' },
-		{ tab: 'federated', label: 'Federated' },
-		{ tab: 'personal', label: 'Personal' },
-		{ tab: 'public', label: 'Public' }
-	] as const
-
 	// Public river is lensless; the stream is a firehose, so every other tab
 	// filters incoming SSE events client-side (same pattern as author/thread pages).
 	const lens = $derived.by((): Lens | null => {
@@ -612,16 +576,14 @@ After the `posts` derived:
 	}
 ```
 
-(Replace the existing `onPost` — keep a single definition.)
-
 - [ ] **Step 2: Markup changes**
 
-1. Top of `<main>` (before the `coreDown` notice), the tab bar:
+1. Top of `<main>` (before the `coreDown` notice), the tab bar — links derive from `TABS`, labels via CSS capitalize (no hand-built label const):
 
 ```svelte
 		<nav class="tabs" aria-label="Timeline">
-			{#each TAB_LINKS as t (t.tab)}
-				<a href="/?tab={t.tab}" aria-current={data.tab === t.tab ? 'page' : undefined}>{t.label}</a>
+			{#each TABS as t (t)}
+				<a href="/?tab={t}" aria-current={data.tab === t ? 'page' : undefined}>{t}</a>
 			{/each}
 		</nav>
 ```
@@ -650,7 +612,7 @@ After the `posts` derived:
 
 - [ ] **Step 3: Styles**
 
-Append to the `<style>` block — the `.admin-nav` pattern (`web/src/routes/admin/+layout.svelte`) plus the MASTER.md deltas (focus ring, transitions). Tokens only, no raw hex:
+Append to the `<style>` block — the `.admin-nav` pattern (`web/src/routes/admin/+layout.svelte`) plus the MASTER.md deltas (focus ring, transitions) and `text-transform: capitalize` for the `TABS`-derived labels. Tokens only, no raw hex:
 
 ```css
 	/* Tab bar: .admin-nav pattern + focus ring. Fixed 44px row so live
@@ -670,6 +632,7 @@ Append to the `<style>` block — the `.admin-nav` pattern (`web/src/routes/admi
 		color: var(--color-secondary);
 		font-weight: 600;
 		text-decoration: none;
+		text-transform: capitalize;
 		border-bottom: 2px solid transparent;
 		transition:
 			color 200ms,
@@ -689,14 +652,13 @@ Append to the `<style>` block — the `.admin-nav` pattern (`web/src/routes/admi
 		color: var(--color-foreground);
 		border-bottom-color: var(--color-accent);
 	}
-</style>
 ```
 
 - [ ] **Step 4: Verify**
 
 Run: `docker compose exec -T web npm run check -w web` → 0 errors.
 Run: `docker compose exec -T web env -u CORE_API_URL npm test -w web` → full web suite green.
-Manual smoke (dev stack must be up — `docker compose up -d`): open `http://localhost:5173/` — guest sees Public active; `/?tab=local` shows only local posts and "Older posts" (if present) carries `tab=local`. Check BOTH themes via the toggle.
+Manual smoke (dev stack must be up — `docker compose up -d`): open `http://127.0.0.1:5173/` — guest sees Public active; `/?tab=local` shows only local posts and "Older posts" (if present) carries `tab=local`. Check BOTH themes via the toggle.
 
 - [ ] **Step 5: Commit**
 
@@ -709,14 +671,14 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 7: Docs + integrated verification
+### Task 6: Docs + integrated verification
 
 **Files:**
 - Modify: `README.md` (lines 23-26 "One live timeline" + lines 91-94 roadmap)
 - Test: none (docs) — plus the full-suite gate below.
 
 **Interfaces:**
-- Consumes: everything shipped in Tasks 1-6.
+- Consumes: everything shipped in Tasks 1-5.
 - Produces: README reflects the tabs; whole feature verified integrated.
 
 - [ ] **Step 1: README**
