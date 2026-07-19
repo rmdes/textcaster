@@ -319,7 +319,7 @@ test('comments feed: a remote cross-instance reply keeps its origin guid and sti
   expect(body).not.toContain(`<guid>${CTX.publicUrl}/post/`) // not swapped for a local permalink either
 })
 
-test('a Textcaster conversation is walkable by threadwalker semantics (guid string-compare + source:account names)', async () => {
+test('a RSC conversation is walkable by threadwalker semantics (guid string-compare + source:account names)', async () => {
   const { service, app } = await makeApp(CTX)
   await seedAlice(service)
   const root = (await service.getRecentLocalPosts(10)).find((p) => p.content === 'first body')!

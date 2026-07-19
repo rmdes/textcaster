@@ -26,7 +26,7 @@ test('sends a descriptive User-Agent so bot-protected feeds are not blocked', as
   await ingestRemoteUser(repo, bus, user, spy as unknown as typeof fetch, publicLookup)
   const init = spy.mock.calls[0][1]
   const headers = new Headers(init?.headers)
-  expect(headers.get('user-agent')).toMatch(/Textcaster/)
+  expect(headers.get('user-agent')).toMatch(/RSC/)
   expect(headers.get('accept')).toMatch(/rss|atom|xml|json/i)
 })
 

@@ -81,7 +81,7 @@ async function sweepLoop() {
 sweepTimer = setTimeout(sweepLoop, 3600_000)
 
 const server = serve({ fetch: app.fetch, port: config.port })
-console.log(`textcaster core listening on :${config.port}`)
+console.log(`rsc core listening on :${config.port}`)
 
 const handler = createShutdown({ server, repo, stopLoops: () => { clearTimeout(pollTimer); clearTimeout(sweepTimer) } })
 process.once('SIGTERM', () => handler('SIGTERM'))

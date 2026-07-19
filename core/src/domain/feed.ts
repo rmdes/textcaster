@@ -50,7 +50,7 @@ export function hubLinkUrl(websub: WebSubMode, publicUrl: string | null): string
 // Channel link is required by RSS 2.0; without a configured public URL there
 // is no honest absolute URL, so use an explicitly-invalid placeholder host.
 function channelLink(ctx: FeedContext, handle: string): string {
-  return ctx.publicUrl ? `${ctx.publicUrl}/users/${handle}` : `https://textcaster.invalid/users/${handle}`
+  return ctx.publicUrl ? `${ctx.publicUrl}/users/${handle}` : `https://rsc.invalid/users/${handle}`
 }
 
 // Dual-emit reply metadata: source:inReplyTo (Textcasting; isPermaLink=false for
@@ -121,7 +121,7 @@ export function renderRssFeed(user: User, posts: Post[], ctx: FeedContext): stri
 // post, with RSS core <source> naming the item's author and linking their
 // personal feed — the same element our ingest attributes rss.chat items by.
 export function renderFirehoseRss(entries: TimelineEntry[], ctx: FeedContext): string {
-  const host = ctx.publicUrl ? new URL(ctx.publicUrl).host : 'textcaster.invalid'
+  const host = ctx.publicUrl ? new URL(ctx.publicUrl).host : 'rsc.invalid'
   const atomLinks: Array<{ rel: string; href: string; type?: string }> = []
   let cloud
   if (ctx.publicUrl) {
@@ -135,7 +135,7 @@ export function renderFirehoseRss(entries: TimelineEntry[], ctx: FeedContext): s
   return generateRssFeed(
     {
       title: `${host}: all posts`,
-      link: ctx.publicUrl ?? 'https://textcaster.invalid',
+      link: ctx.publicUrl ?? 'https://rsc.invalid',
       description: `Posts from all users on ${host}`,
       ...(atomLinks.length ? { atom: { links: atomLinks } } : {}),
       ...(cloud ? { cloud } : {}),
@@ -202,7 +202,7 @@ export function renderCommentsFeed(post: Post, replies: TimelineEntry[], ctx: Fe
   return generateRssFeed(
     {
       title: `Comments on "${label}"`,
-      link: post.url ?? ctx.publicUrl ?? 'https://textcaster.invalid',
+      link: post.url ?? ctx.publicUrl ?? 'https://rsc.invalid',
       description: `Replies to "${label}"`,
       items: replies.map((p) => {
         const srcUrl = authorSourceUrl(p.author, ctx)

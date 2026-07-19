@@ -39,7 +39,7 @@ test('anonymous sign-in mints a host-only session cookie', async () => {
   const res = await app.request('/api/auth/sign-in/anonymous', { method: 'POST', headers: { origin: 'http://web.test' } })
   expect(res.status).toBe(200)
   const sc = res.headers.get('set-cookie') ?? ''
-  expect(sc).toContain('textcaster.session_token=')
+  expect(sc).toContain('rsc.session_token=')
   expect(sc.toLowerCase()).not.toContain('domain=') // host-only (SEC-1)
   expect(sc.toLowerCase()).toContain('httponly')
   expect(sc.toLowerCase()).toContain('samesite=lax')
@@ -263,7 +263,7 @@ test('magic link logs in and marks the account verified', async () => {
   const { app, mail, repo } = await makeApp()
   const r = await app.request('/api/auth/sign-in/magic-link', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://web.test', 'x-forwarded-for': uniqueIp() }, body: JSON.stringify({ email: 'm@b.test' }) })
   expect(r.status).toBe(200)
-  // Subject is "Your Textcaster login link" — matches "login", not "log in".
+  // Subject is "Your RSC login link" — matches "login", not "log in".
   const link = /(https?:\/\/\S+)/.exec(mail.sent.find((m) => /login/i.test(m.subject))!.text)![1]
   const consume = await app.request(link!, { headers: { origin: 'http://web.test' } })
   expect(consume.headers.get('set-cookie') ?? '').toContain('session_token')

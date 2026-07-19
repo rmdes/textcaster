@@ -27,7 +27,7 @@ export async function anonSession(app: Hono): Promise<string> {
   const res = await app.request('/api/auth/sign-in/anonymous', { method: 'POST', headers: { origin: 'http://web.test', 'x-forwarded-for': uniqueIp() } })
   if (res.status !== 200) throw new Error(`anon sign-in failed: ${res.status}`)
   const setCookie = res.headers.get('set-cookie') ?? ''
-  return setCookie.split(';')[0] // "textcaster.session_token=..."
+  return setCookie.split(';')[0] // "rsc.session_token=..."
 }
 
 // Accumulates every Set-Cookie across requests — multiSession mints several

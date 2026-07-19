@@ -23,7 +23,7 @@ export function createAuth(deps: AuthDeps) {
     magicLink({
       sendMagicLink: async ({ email, url }) => {
         if (!deps.mailer) throw new Error('email is not configured on this instance')
-        await deps.mailer.send(email, 'Your Textcaster login link', `Log in: ${url}`)
+        await deps.mailer.send(email, 'Your RSC login link', `Log in: ${url}`)
       },
     }),
     anonymous({
@@ -60,14 +60,14 @@ export function createAuth(deps: AuthDeps) {
       requireEmailVerification: true, // hard verification (spec decision)
       sendResetPassword: async ({ user, url }) => {
         if (!deps.mailer) throw new Error('email is not configured on this instance')
-        await deps.mailer.send(user.email, 'Reset your Textcaster password', `Reset your password: ${url}`)
+        await deps.mailer.send(user.email, 'Reset your RSC password', `Reset your password: ${url}`)
       },
     },
     emailVerification: {
       sendOnSignUp: true,
       sendVerificationEmail: async ({ user, url }) => {
         if (!deps.mailer) throw new Error('email is not configured on this instance')
-        await deps.mailer.send(user.email, 'Verify your Textcaster email', `Verify your email: ${url}`)
+        await deps.mailer.send(user.email, 'Verify your RSC email', `Verify your email: ${url}`)
       },
     },
     // 4x the sweep TTL: the browser cookie must outlive the idle window even
@@ -84,7 +84,7 @@ export function createAuth(deps: AuthDeps) {
     // (itself resolved from the edge proxy, not client-spoofable). Trust that
     // header so the per-IP rate limits use the real client, not one shared
     // global bucket (probed: session.ipAddress then reflects the header).
-    advanced: { cookiePrefix: 'textcaster', disableOriginCheck: false, ipAddress: { ipAddressHeaders: ['x-forwarded-for'] } },
+    advanced: { cookiePrefix: 'rsc', disableOriginCheck: false, ipAddress: { ipAddressHeaders: ['x-forwarded-for'] } },
     plugins,
   })
 }

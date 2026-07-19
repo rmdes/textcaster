@@ -32,7 +32,7 @@ const MAX_FEED_BYTES = 5 * 1024 * 1024
 // with no (or a bare `node`) User-Agent — which then fails parsing as "Unrecognized
 // feed format". A descriptive UA + a feed Accept header gets the real feed back.
 const FEED_FETCH_HEADERS = {
-  'user-agent': 'Textcaster/0.1 (+https://github.com/rmdes/textcaster)',
+  'user-agent': 'RSC/0.1 (+https://github.com/rmdes/rsc)',
   accept: 'application/rss+xml, application/atom+xml, application/feed+json, application/json, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5',
 }
 

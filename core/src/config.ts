@@ -78,12 +78,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const smtpUrl = env.RSC_SMTP_URL ?? null
   // From-address default derives from the public origin's host, else webOrigin's.
   const mailHost = new URL(publicUrl ?? webOrigin).host
-  const mailFrom = env.RSC_MAIL_FROM ?? `textcaster@${mailHost}`
+  const mailFrom = env.RSC_MAIL_FROM ?? `rsc@${mailHost}`
 
   const adminEmails = parseAdminEmails(env.RSC_ADMIN_EMAIL)
 
   return {
-    dbPath: env.RSC_DB ?? './data/textcaster.db',
+    dbPath: env.RSC_DB ?? './data/rsc.db',
     token,
     port: positiveInt('RSC_PORT', env.RSC_PORT ?? '8787'),
     pollSeconds: positiveInt('RSC_POLL_SECONDS', env.RSC_POLL_SECONDS ?? '60'),
