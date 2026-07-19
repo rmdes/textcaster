@@ -1,4 +1,4 @@
-# Textcaster — project conventions
+# RSC — project conventions
 
 A feeds-native social timeline: local posts and remote feed items are equal
 citizens; posts/replies/conversations travel as RSS. Full picture in
@@ -103,16 +103,16 @@ below: `docs/superpowers/reviews/YYYY-MM-DD-<topic>.md`.
 
 ## UI and design system
 
-`design-system/textcaster/MASTER.md` is the source of truth for all UI:
+`design-system/rsc/MASTER.md` is the source of truth for all UI:
 color tokens (light + dark via `light-dark()`), typography (Libre Bodoni /
-Public Sans), spacing, component specs, and Textcaster-specific constraints
+Public Sans), spacing, component specs, and RSC-specific constraints
 (no-JS first-class, jank-free live prepends, local/remote legibility, text
 first / enclosures second, theme toggle as enhancement only).
 
 - Any task that touches UI — pages, components, styles, layout, colors,
   typography, accessibility — MUST invoke the `ui-ux-pro-max:ui-ux-pro-max`
   skill first, and MUST follow MASTER.md. Page-specific overrides go in
-  `design-system/textcaster/pages/<page>.md` and beat MASTER.md.
+  `design-system/rsc/pages/<page>.md` and beat MASTER.md.
 - When writing or reviewing SvelteKit/Svelte 5 code in `web/`, consult the
   relevant `svelte-skills` first — `svelte-runes` (state/derived/effect/
   props/bindable — the reactivity traps), `sveltekit-data-flow` (loads vs

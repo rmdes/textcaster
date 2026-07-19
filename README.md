@@ -1,4 +1,4 @@
-# Textcaster
+# RSC — Really Simple Conversations
 
 A feeds-native social timeline. People who post through the instance and
 people who post on their own site are equal citizens in the same timeline —
@@ -6,8 +6,7 @@ posts, replies, and whole conversations travel as RSS, so following,
 threading, and federation all work over open feeds instead of a proprietary
 API.
 
-Textcaster is built on [Textcasting](https://textcasting.org) and directly
-inspired by Dave Winer's [rss.chat](https://github.com/scripting/rss.chat).
+Inspired by Dave Winer's [Textcasting](https://textcasting.org) and [rss.chat](https://github.com/scripting/rss.chat).
 It uses RSS, OPML, JSON Feed, WebSub, and rssCloud today, and aims to add
 IndieWeb interop (IndieAuth, Micropub, Webmention) next — see the roadmap.
 
@@ -23,7 +22,7 @@ IndieWeb interop (IndieAuth, Micropub, Webmention) next — see the roadmap.
 **One live timeline, four tabs.** Local posts and polled-in remote feed items
 share a single server-rendered timeline that updates live over SSE
 (Server-Sent Events), filtered through four tabs: **Local** (posts born here),
-**Federated** (connected Textcaster instances), **Personal** (you + who you
+**Federated** (connected RSC instances), **Personal** (you + who you
 follow), and **Public** (everything). Logged-in users land on Personal, guests
 on Public. Works with JavaScript off — tabs are plain links and the live
 updates are a progressive enhancement, not a requirement.
@@ -70,17 +69,17 @@ convention). Local posts carry the Textcasting dual contract — rendered,
 sanitized HTML for readers *and* the raw `source:markdown` beside it — plus
 permalink `guid`s, `source:` attribution, and per-conversation
 `source:comments` feeds. New posts are delivered in real time to subscribers
-over both WebSub (fat pings) and rssCloud, and Textcaster receives the same
+over both WebSub (fat pings) and rssCloud, and RSC receives the same
 way (push-in), so federation is live, not just polled.
 
-**Interop with rss.chat.** Textcaster consumes Dave Winer's rss.chat firehose
+**Interop with rss.chat.** RSC consumes Dave Winer's rss.chat firehose
 with correct per-item author attribution and full threading, and emits the
 same `source:` namespace (`source:inReplyTo`, `source:markdown`,
 `source:account`, `source:comments`) so his side can round-trip ours — a
 conversation can federate A→B→A over nothing but RSS. Our feeds are walkable
 by Dave's own [`threadwalker`](https://github.com/scripting/rss.chat)
 verbatim: local posts use bare permalink `guid`s as the thread key, so his
-reference walker reconstructs a Textcaster conversation with no changes. A
+reference walker reconstructs a RSC conversation with no changes. A
 "Connected instances" panel advertises which Textcasting peers an instance
 actually threads and interops with (detected from feeds that carry
 `source:markdown`).
@@ -105,7 +104,7 @@ harvesting from source feeds. Trackable in [`docs/superpowers/specs/`](docs/supe
 Docker Compose runs the whole dev stack — no host Node install needed.
 
 ```bash
-git clone https://github.com/rmdes/textcaster.git && cd textcaster
+git clone https://github.com/rmdes/rsc.git && cd rsc
 make up                       # core + web + Mailpit, live reload
 ```
 
@@ -197,13 +196,12 @@ Standards-forward, few dependencies, no framework lock-in:
   every major piece (spine, feeds, following, threading, rich content, the
   markdown composer, the firehose, auth, email, and Docker).
 - [`docs/superpowers/documentation/RUNNING.md`](docs/superpowers/documentation/RUNNING.md) —
-  running Textcaster without Docker (npm workspaces directly), the full env
+  running RSC without Docker (npm workspaces directly), the full env
   var reference, and identity/session/email details.
 
 ## Credits and lineage
 
-The name is an attribution. Textcaster stands on ideas and standards it did
-not invent:
+RSC stands on ideas and standards it did not invent:
 
 - **Dave Winer** and [textcasting.org](https://textcasting.org) — the
   Textcasting manifesto, RSS, OPML, rssCloud, and the
@@ -213,7 +211,7 @@ not invent:
 - **JSON Feed** — Manton Reece and Brent Simmons.
 - **WebSub** and the broader open-feed ecosystem.
 
-Textcaster's job is to make these work together, credited, in one place.
+RSC's job is to make these work together, credited, in one place.
 
 ## License
 

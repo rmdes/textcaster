@@ -7,8 +7,8 @@ the `localstorage` addon; email via the `sendmail` addon. See the design at
 ## Build & install
 
     # from the repo root
-    cloudron build --set-build-service <your-build-service>   # or: docker build -f cloudron/Dockerfile -t <registry>/textcaster:dev .
-    cloudron install --image <registry>/textcaster:dev
+    cloudron build --set-build-service <your-build-service>   # or: docker build -f cloudron/Dockerfile -t <registry>/rsc:dev .
+    cloudron install --image <registry>/rsc:dev
 
 `cloudron build` reads `cloudron/CloudronManifest.json`; run it from the repo
 root so the whole workspace is the build context, pointing at `cloudron/Dockerfile`.

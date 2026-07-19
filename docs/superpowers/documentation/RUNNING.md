@@ -1,6 +1,6 @@
-# Running Textcaster
+# Running RSC
 
-Textcaster is two deployables: **core** (headless API) and **web**
+RSC is two deployables: **core** (headless API) and **web**
 (SvelteKit client). The web app talks to core only over plain HTTP, from its
 own server-side code — core is never exposed to browsers, and there is no
 CORS to configure. Browsers only ever talk to the web app.
@@ -33,7 +33,7 @@ One command brings up core, web, and Mailpit with live reload: edits to
 ### Dev stack
 
 ```bash
-git clone https://github.com/rmdes/textcaster.git && cd textcaster
+git clone https://github.com/rmdes/rsc.git && cd rsc
 make up
 ```
 
@@ -169,8 +169,8 @@ RSC_AUTH_SECRET=$(openssl rand -hex 32)   # paste the output as the value
 | `RSC_ANON_TTL_DAYS` | no | `7` | Anonymous (guest) accounts idle longer than this are reclaimed by an hourly sweep. |
 | `RSC_ADMIN_EMAIL` | no | — | Comma-separated admin email(s). An account whose **verified** email matches becomes an instance admin (`isAdmin` on `/me`; unlocks admin-only routes like `GET /admin/status`). Unset = no admin (admin routes 403 for everyone). |
 | `RSC_SMTP_URL` | no | — | SMTP connection URL, e.g. `smtp://localhost:1025` (Mailpit, no TLS/auth) or `smtps://user:pass@host:465` (production). Unset means mail is off — see "Email" below. |
-| `RSC_MAIL_FROM` | no | `textcaster@<host of RSC_PUBLIC_URL or RSC_WEB_ORIGIN>` | From-address on outgoing mail. |
-| `RSC_DB` | no | `./data/textcaster.db` | SQLite file path, or `:memory:`. |
+| `RSC_MAIL_FROM` | no | `rsc@<host of RSC_PUBLIC_URL or RSC_WEB_ORIGIN>` | From-address on outgoing mail. |
+| `RSC_DB` | no | `./data/rsc.db` | SQLite file path, or `:memory:`. |
 | `RSC_PORT` | no | `8787` | HTTP port core listens on. |
 | `RSC_POLL_SECONDS` | no | `60` | How often remote feeds are polled. |
 
@@ -223,14 +223,14 @@ launched the instance.
 
 ## Identity & sessions
 
-Textcaster uses [better-auth](https://www.better-auth.com/), mounted in core
-at `/api/auth/*`, with cookie-based sessions (`textcaster.session_token`,
+RSC uses [better-auth](https://www.better-auth.com/), mounted in core
+at `/api/auth/*`, with cookie-based sessions (`rsc.session_token`,
 host-only, `httpOnly`, `SameSite=Lax`). There is no separate sign-up step to
 start using the app:
 
 - **Visitors act first.** The first write from a fresh browser (e.g.
   submitting the compose form) transparently mints an anonymous better-auth
-  session and, with it, a local Textcaster identity handled `@guest-XXXXXX`.
+  session and, with it, a local RSC identity handled `@guest-XXXXXX`.
   No form, no page reload.
 - **Register to keep it.** Signing up while holding a guest session
   re-points that same identity at the new account — same handle, same
@@ -299,7 +299,7 @@ Every local user's posts are published as standard feeds:
 - `GET /users/<handle>/feed.xml` — RSS 2.0
 - `GET /users/<handle>/feed.json` — JSON Feed 1.1
 
-Another Textcaster instance can add either URL as a remote user — that is
+Another RSC instance can add either URL as a remote user — that is
 the federation loop. A remote user's handle redirects (302) to their
 canonical feed instead.
 
@@ -376,7 +376,7 @@ database it cannot handle, with a clear error instead of silent 500s:
   spine-era ones.** Delete it:
 
   ```bash
-  rm -f core/data/textcaster.db
+  rm -f core/data/rsc.db
   ```
 
 - `database is newer than this build` — the file was created by a newer
@@ -572,7 +572,7 @@ Posting requires a session — without one, `POST /posts` 401s:
 ```bash
 curl -i -X POST http://localhost:8787/posts \
   -H "Content-Type: application/json" \
-  -d '{"content":"hello, textcaster"}'
+  -d '{"content":"hello, rsc"}'
 ```
 
 Mint an anonymous session (the same one a fresh browser visitor gets on
@@ -591,7 +591,7 @@ Post under that session, then read the identity it minted:
 ```bash
 curl -X POST http://localhost:8787/posts \
   -b cookies.txt -H "Content-Type: application/json" \
-  -d '{"content":"hello, textcaster"}'
+  -d '{"content":"hello, rsc"}'
 
 curl http://localhost:8787/me -b cookies.txt
 ```

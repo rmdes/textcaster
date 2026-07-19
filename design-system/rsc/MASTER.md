@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** Textcaster
+**Project:** RSC
 **Generated:** 2026-07-15 20:21:54
 **Category:** Magazine/Blog
 
@@ -203,7 +203,7 @@ CSS custom properties, three-state: system default, explicit light, explicit dar
 - **Layout:** single centered column, `max-width: 42rem` (~65ch) — long-form text measure governs the width, not a 12-col grid
 - **Post anatomy:** author display name + `@handle` + kind badge (`local`/`remote`) · optional title (heading font) · body text · media enclosure (below text) · source link / timestamp
 
-### Textcaster-specific constraints (from the spec — override anything above that conflicts)
+### RSC-specific constraints (from the spec — override anything above that conflicts)
 
 1. **No-JS first-class:** every style must read correctly on plain SSR HTML; JS only enhances. No CSS that depends on JS-added classes.
 2. **Live timeline:** SSE island prepends posts at the top. Insertions must not jank — fixed post paddings, no entrance animations taller than the post, respect `prefers-reduced-motion`.

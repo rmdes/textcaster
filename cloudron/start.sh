@@ -17,7 +17,7 @@ tc_smtp_url() { # server port user pass
 [ "${TC_SOURCE_ONLY:-0}" = "1" ] && return 0
 
 # ── Runtime ──
-echo "==> Textcaster: preparing /app/data"
+echo "==> RSC: preparing /app/data"
 mkdir -p /app/data/config
 
 # Secrets: generate once, persist, NEVER regenerate (would drop all sessions).
@@ -31,7 +31,7 @@ export RSC_TOKEN
 # rebuild: cloudron exec --app <id> -- sh -c 'echo you@example.com > /app/data/config/admin_email'
 [ -f /app/data/config/admin_email ] && export RSC_ADMIN_EMAIL="$(cat /app/data/config/admin_email)"
 
-# Map Cloudron env → Textcaster/core.
+# Map Cloudron env → RSC/core.
 export RSC_DB="/app/data/textcaster.db"
 export RSC_PUBLIC_URL="${CLOUDRON_APP_ORIGIN}"
 export RSC_WEB_ORIGIN="${CLOUDRON_APP_ORIGIN}"
