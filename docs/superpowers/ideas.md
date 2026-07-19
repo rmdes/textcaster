@@ -23,11 +23,12 @@ admin UI** (overview + read-only user list, sub-routes + layout gate) · plus th
 post-SP2 hardening batch. The parallel session's **Live edits** feature shipped
 alongside it (section below). Remaining follow-ups + adjacent deferrals:
 
-- **Per-user feeds / feed-reader milestone** *(the big one — likely next)* — users
-  subscribe to their own feeds and read them in a personal timeline (Textcaster as
-  a feed reader with a social layer), distinct from admin-managed instance feeds.
-  Explicitly carved out as its own milestone during the SP2 brainstorm. (Adjacent
-  to several generated reader ideas below — Microsub read endpoint, River feeds.)
+- ✅ **Per-user feeds / feed-reader milestone** — **DONE & DEPLOYED 2026-07-19**
+  (all 3 instances): SP1 subscription engine + SP2 four-tab timeline
+  (Local/Federated/Personal/Public) + SP3 subscribe & manage web UX (self-serve
+  subscribe form, mode-switched following manager, `/admin/settings` cap). Users
+  now subscribe to their own feeds and read a personal timeline — Textcaster is a
+  feed reader with a social layer, distinct from admin-managed instance feeds.
 - **WebSub unsubscribe on feed removal** — `deleteUserCascade` drops our local
   subscription but never sends `hub.mode=unsubscribe`; self-heals on lease expiry
   (SP2 final-review Minor).
@@ -148,7 +149,8 @@ why-it-fits · grounding · tradeoff); one line each for now.
   milestone.)
 - **Micropub posting-in** — post to your instance from any Micropub client.
 - **Webmention (in/out)** — cross-site reply/mention notifications.
-- **Timeline tabs** — personal / local / remote views.
+- ✅ **Timeline tabs** — DONE (SP2 four-tab home: Local / Federated / Personal /
+  Public, deployed 2026-07-19).
 - **OPML-category filtering of sources** — filter the timeline by feed folders.
 - **Media / enclosures** — currently text-first only; attachments are unbuilt.
 - **Avatar harvesting from source feeds** — pull author avatars off ingested feeds.
@@ -486,7 +488,7 @@ feeds.
 
 ## Reply-context that rides along — consume the embedded `h-cite` in `in-reply-to`  *(Aaron-lens round)*
 
-**Status:** ✅ SHIPPED (2026-07-19, on `main`, not yet deployed) — parse h-cite →
+**Status:** ✅ SHIPPED & DEPLOYED (2026-07-19, all 3 instances) — parse h-cite →
 thread ref (fixed the orphan bug) + author-gated author/snippet context, trust-gated
 (nulled once resolved) + plain-text render on 4 surfaces. Part of the **IndieWeb
 layer** milestone-suite (consume side of A). Original writeup retained below.
@@ -788,13 +790,19 @@ a drop-in `plugins: [...]` add. Consult the `better-auth` MCP for current API.
   `handle`. Likely reject unless we want handle==auth-username unified — spec it
   before touching, to avoid two sources of truth.
 
-- **multi-session** *(⭐ promoted 2026-07-19 — brainstorm queued)* — hold several signed-in accounts in one
+- ✅ **multi-session** — **SHIPPED & DEPLOYED 2026-07-19** (better-auth
+  `multiSession` maxSessions 4 + `/accounts` switcher; registered-only,
+  guest-filtered; deterministic set-active-then-revoke logout). Hold several
+  signed-in accounts in one
   browser, switch without re-login. **Tradeoff:** interacts with the anonymous
   guest carry-over (`onLinkAccount`) and the cookie relay in
   `web/src/lib/server/session.ts` — both assume one active session. Non-trivial;
   needs its own brainstorm on how guest-upgrade behaves with N sessions.
 
-- **open-api** *(⭐ promoted 2026-07-19 — brainstorm first)* — serves an OpenAPI schema + a
+- ✅ **open-api** — **SHIPPED + PUSHED 2026-07-19, NOT deployed** (dev-only:
+  `TEXTCASTER_AUTH_OPENAPI=on` mounts the reference; flag defaults off in prod AND
+  the web proxy hard-404s `/api/auth/reference` + `/api/auth/open-api/*`). Serves
+  an OpenAPI schema + a
   reference UI for the better-auth routes. **Why it fits:** core is
   internal/headless; a generated auth-route reference aids the web-proxy work.
   **Tradeoff:** exposes an auth-surface doc endpoint — must stay behind the
