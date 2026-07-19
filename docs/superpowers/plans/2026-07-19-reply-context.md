@@ -32,7 +32,7 @@
 - **Modify `core/src/domain/discovery.ts`** — add + export `parseInReplyTo` and `truncate`; wire `discoverFeed`'s entry map to use them.
 - **Modify `core/src/domain/ingest.ts`** — `ParsedItem` gains `replyContextAuthor`/`replyContextSnippet`; `toParsedItem` gains a trailing `reply?: { author, snippet }` options param; the `Post` object carries the two fields.
 - **Modify `core/src/storage/sqlite.ts`** — migration (2 columns), `PostsTable`, `rowToPost`, `insertPost .values`.
-- **Modify `core/src/api/app.ts`** — a `wireEntry` gate applied at the timeline map, the thread response, and the SSE emit.
+- **Modify `core/src/domain/types.ts` + `core/src/storage/sqlite.ts` (`joinedRowToEntry`) + `core/src/domain/bus.ts` (`emitNewPost`)** — the `hideResolvedReplyContext` trust gate at the two serialization choke points (covers timeline/thread/replay + live SSE; leaves `getPost` raw).
 - **Test `core/test/discovery.test.ts`** (create or extend), **`core/test/ingest.test.ts`** (extend), **`core/test/app.test.ts`** or nearest API test (extend) — verify against the existing test style; if a named file differs, match the real one.
 - **Modify `web/src/lib/types.ts`** — `TimelineEntry` gains the two optional fields.
 - **Modify `web/src/app.css`** — `.reply-context` class.
@@ -262,15 +262,24 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: Core serialization — the trust gate (F8)
+### Task 3: Core serialization — the trust gate at the two choke points (F8)
 
 **Files:**
-- Modify: `core/src/api/app.ts`
+- Modify: `core/src/domain/types.ts` (the helper), `core/src/storage/sqlite.ts` (`joinedRowToEntry`), `core/src/domain/bus.ts` (`emitNewPost`)
 - Test: `core/test/app.test.ts` (or the nearest existing API/timeline test — match it)
 
+**Why these two sites (not the app routes):** `joinedRowToEntry` (`sqlite.ts:34`,
+`{ ...rowToPost(r), author }`) is the single `TimelineEntry` mapper behind
+`getTimeline`, `getThread`, **and `getTimelineAfter` (the SSE reconnect-replay)**
+and the firehose; `emitNewPost` (`bus.ts`) is the live SSE emit whose in-memory
+literals bypass the DB mapper. Gating these two covers every client-facing path —
+including reconnect-replay, which an app-route-level gate would miss — and leaves
+`getPost` (internal) raw, so Task 2's persistence test is unaffected. Both take
+`TimelineEntry`, so the helper needs no generic.
+
 **Interfaces:**
-- Consumes: the serialized entry shape (`Post` + `author`), `inReplyToPostId`.
-- Produces: entries leaving core have `replyContextAuthor`/`replyContextSnippet` nulled when `inReplyToPostId` is set.
+- Consumes: `TimelineEntry` (`inReplyToPostId`, `replyContextAuthor`, `replyContextSnippet`).
+- Produces: `export function hideResolvedReplyContext(e: TimelineEntry): TimelineEntry`; entries from `joinedRowToEntry` + `emitNewPost` have the context nulled when `inReplyToPostId` is set.
 
 - [ ] **Step 1: Write the failing test** — a resolved reply must ship no context
 
@@ -293,29 +302,42 @@ test('GET /timeline nulls reply-context on a resolved reply, keeps it on an orph
 Run: `npm test -w core -- app` (or the matched file)
 Expected: FAIL — `resolved.replyContextAuthor` is non-null (no gate yet).
 
-- [ ] **Step 3: Add the gate helper + apply at all three serialization points** (`core/src/api/app.ts`)
+- [ ] **Step 3: Add the helper** (`core/src/domain/types.ts`, near `Post`/`TimelineEntry`)
 
 ```ts
-// The reply-context is the replier's unverified claim; once the real parent is
-// known it must not leave core. Enforce once, here.
-const wireEntry = <T extends { inReplyToPostId?: string | null; replyContextAuthor?: string | null; replyContextSnippet?: string | null }>(e: T): T =>
-  e.inReplyToPostId ? { ...e, replyContextAuthor: null, replyContextSnippet: null } : e
+// A resolved reply's reply-context is the replier's unverified claim about a
+// parent we now have for real — it must never leave core. Applied at the two
+// serialization choke points (joinedRowToEntry, emitNewPost).
+export function hideResolvedReplyContext(e: TimelineEntry): TimelineEntry {
+  return e.inReplyToPostId ? { ...e, replyContextAuthor: null, replyContextSnippet: null } : e
+}
 ```
 
-Apply it:
-- Timeline map (`app.ts:395`): `const timeline = entries.map((e) => ({ ...wireEntry(e), replyCount: counts.get(e.id) ?? 0 }))`
-- The thread route's `c.json` entries (`getThread` result) — map each through `wireEntry`.
-- The SSE `post` emit (`app.ts:408`): `stream.writeSSE({ event: 'post', id: entry.id, data: JSON.stringify(wireEntry(entry)) })`.
+- [ ] **Step 4: Apply at both choke points**
 
-- [ ] **Step 4: Run tests + typecheck**
+`joinedRowToEntry` (`core/src/storage/sqlite.ts:34`) — wrap the return (import the helper):
+```ts
+function joinedRowToEntry(r: JoinedRow): TimelineEntry {
+  return hideResolvedReplyContext({
+    ...rowToPost(r),
+    author: { id: r.u_id, kind: r.u_kind, handle: r.u_handle, displayName: r.u_display_name, feedUrl: r.u_feed_url, createdAt: r.u_created_at, authUserId: r.u_auth_user_id },
+  })
+}
+```
+`emitNewPost` (`core/src/domain/bus.ts`) — gate the emitted entry:
+```ts
+emitNewPost(e) { emitter.emit('new-post', hideResolvedReplyContext(e)) },
+```
 
-Run: `npm test -w core -- app` (matched file) → PASS. `npm run typecheck -w core` → clean.
+- [ ] **Step 5: Run tests + typecheck**
 
-- [ ] **Step 5: Commit**
+Run: `npm test -w core -- app` (matched file) → PASS. `npm run typecheck -w core` → clean. `npm test -w core` once (flaky note) → all pass (confirms Task 2's `getPost` persistence test still green — `getPost` is not gated).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add core/src/api/app.ts core/test/app.test.ts
-git commit -m "core: serialization gate — drop reply-context once the reply resolves
+git add core/src/domain/types.ts core/src/storage/sqlite.ts core/src/domain/bus.ts core/test/app.test.ts
+git commit -m "core: trust gate — drop reply-context at the serialization choke points once resolved
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -387,4 +409,6 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - **Order:** 1 (parse) → 2 (persist) → 3 (gate) → 4 (web render). Each is independently testable; 2 depends on 1's `ParsedItem` fields, 4 depends on 2–3's serialized fields.
 - **Plan-level carry-overs from the spec review (not spec text):** F9 (`truncate` code-point-safe + slice-before-trim — implemented in Task 1 Step 3); F10 (context via one trailing options object — Task 1 Step 4); the guard-quoting trap (Task 4 uses the NEW guard verbatim; do not copy the old `startsWith('http')`-only block). Minor: the two ingest threading tests collapse to one integration smoke (Task 2) since `ingestItems` sees a plain string ref either way — the discovery-level assertions (Task 1) are the new logic.
 - **Verify test-file names against the real tree** before writing (`core/test/*.test.ts`, the web render test harness) — match the existing style; if a named file doesn't exist, use the nearest equivalent and note it in the report.
+- **Plan ponytail-review folded (rev 1, 2026-07-19):** Task 3's gate moved from an app-route-level helper (3 sites — which **missed** the SSE reconnect-replay path `getTimelineAfter`→`joinedRowToEntry`) to the two `TimelineEntry` choke points `joinedRowToEntry` + `emitNewPost`; the helper dropped its generic (both sites are `TimelineEntry`); `getPost` stays raw (Task 2 test unaffected). The reviewer confirmed the rest at/below its constraints' minimum: `truncate` (F9-minimal), the `parseInReplyTo` branches (all real `mf2tojf2` shapes), the 4-task split, and the four render copies (matches the already-duplicated bare-link block — extracting a component would be the over-build).
+
 - **Shared checkout:** confirm `npm test -w core` is green on HEAD before starting (a pre-existing red other than the known ingest flaky is not this work's).

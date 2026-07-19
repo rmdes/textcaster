@@ -213,13 +213,23 @@ same. So the two new `Post` fields **serialize automatically** once `rowToPost`
 maps them — **no new Hono route, no field whitelist.** (Read the installed Hono
 if any route/serialization detail is uncertain; do not add a route.)
 
-**Trust gate at serialization (F8) — enforce "the real post always wins" ONCE,
-structurally:** **null `replyContextAuthor`/`replyContextSnippet` whenever
-`inReplyToPostId` is set**, at the point entries leave core — a single shared
-shaping step covering the timeline map, the thread response, and the SSE emit. A
-resolved reply then never ships the unverified claim, so the four render copies
-(§4) can't individually leak it. (The render guard still checks `!inReplyToPostId`
-as defense-in-depth.)
+**Trust gate at the serialization choke points (F8) — enforce "the real post
+always wins" ONCE:** a resolved reply must never ship its unverified claim. Null
+`replyContextAuthor`/`replyContextSnippet` whenever `inReplyToPostId` is set, via
+one helper `hideResolvedReplyContext(e: TimelineEntry): TimelineEntry` applied at
+the **two** places client-facing entries are produced:
+- **`joinedRowToEntry`** (`sqlite.ts:34`) — the single `TimelineEntry` mapper
+  (`{ ...rowToPost(r), author }`) behind `getTimeline`, `getThread`, **and
+  `getTimelineAfter` (the SSE reconnect-replay path)** and the firehose; and
+- **`emitNewPost`** (`core/src/domain/bus.ts`) — the live SSE emit, whose
+  in-memory literals bypass the DB mapper.
+
+These two cover **every** client-facing path — including the reconnect-replay an
+app-route-level gate would miss — while leaving `getPost` (internal, never
+client-serialized for reply-context) raw. Both sites take/return `TimelineEntry`,
+so the helper needs no generic. The four render copies (§4) can't individually
+leak it, and the render guard still checks `!inReplyToPostId` as
+defense-in-depth.
 
 Web-type change: add `replyContextAuthor?`/`replyContextSnippet?` to
 `TimelineEntry` (`web/src/lib/types.ts`); check whether `web/src/lib/api.ts`
@@ -300,6 +310,15 @@ serializes with `replyContext*` = `null`; an unresolved one keeps them.
 - The RSS/Atom reply path (already string-based, unaffected).
 
 ## Revisions
+
+**Rev 3 (2026-07-19)** — folded a ponytail review of the *plan* that traced the
+real serialization paths: the §5 gate moves from an app-route-level shaping step
+(which would have **missed the SSE reconnect-replay path**, `getTimelineAfter` →
+`joinedRowToEntry`, leaking a resolved reply's context on reconnect) to the two
+`TimelineEntry` **choke points** `joinedRowToEntry` + `emitNewPost`. This also
+drops the generic on the helper (both sites are `TimelineEntry`) and leaves
+`getPost` raw. Everything else in the plan was confirmed at/below its constraints'
+minimum.
 
 **Rev 2 (2026-07-19)** — folded the parallel-session spec review
 (`docs/superpowers/reviews/2026-07-19-reply-context-spec-review.md`; both product
