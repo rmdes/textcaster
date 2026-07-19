@@ -20,10 +20,13 @@ IndieWeb interop (IndieAuth, Micropub, Webmention) next — see the roadmap.
 
 ## What works today
 
-**One live timeline.** Local posts and polled-in remote feed items share a
-single server-rendered timeline that updates live over SSE (Server-Sent
-Events). Works with JavaScript off — the live updates are a progressive
-enhancement, not a requirement.
+**One live timeline, four tabs.** Local posts and polled-in remote feed items
+share a single server-rendered timeline that updates live over SSE
+(Server-Sent Events), filtered through four tabs: **Local** (posts born here),
+**Federated** (connected Textcaster instances), **Personal** (you + who you
+follow), and **Public** (everything). Logged-in users land on Personal, guests
+on Public. Works with JavaScript off — tabs are plain links and the live
+updates are a progressive enhancement, not a requirement.
 
 **Rich posting.** A Markdown composer (built on [Carta](https://github.com/BearToCode/carta))
 with syntax highlighting and a live preview. Line breaks, `:shortcode:`
@@ -89,9 +92,8 @@ any VPS owner can run behind Caddy with automatic HTTPS (below).
 ## Roadmap
 
 Not built yet, in rough order: IndieAuth sign-in and Micropub posting-in;
-Webmention; timeline tabs (personal / local / remote) and OPML-category
-filtering of sources; media/enclosures and avatar harvesting from source
-feeds. Trackable in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+Webmention; OPML-category filtering of sources; media/enclosures and avatar
+harvesting from source feeds. Trackable in [`docs/superpowers/specs/`](docs/superpowers/specs/).
 
 ## Develop
 
