@@ -23,6 +23,15 @@ test('hasSession / cookieHeader read the cookie jar', () => {
 	const withSession = fakeCookies([{ name: 'rsc.session_token', value: 'x' }])
 	expect(hasSession(withSession as unknown as Cookies)).toBe(true)
 	expect(cookieHeader(withSession as unknown as Cookies)).toBe('rsc.session_token=x')
+
+	// better-auth prefixes cookies with __Secure- in production.
+	const secure = fakeCookies([{ name: '__Secure-rsc.session_token', value: 'x' }])
+	expect(hasSession(secure as unknown as Cookies)).toBe(true)
+
+	// A pre-rename cookie core no longer accepts must NOT count as a session,
+	// or ensureSessionFetch skips the anonymous mint and guests can't post.
+	const stale = fakeCookies([{ name: 'textcaster.session_token', value: 'x' }])
+	expect(hasSession(stale as unknown as Cookies)).toBe(false)
 })
 
 test('authedFetch injects Cookie and Origin headers', async () => {

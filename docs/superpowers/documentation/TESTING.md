@@ -53,9 +53,9 @@ Two gotchas make host-side `npm test` fail while `docker compose up` is live.
 Run the tests inside the container instead:
 
 ```bash
-docker exec textcaster-web  sh -c "cd /app && env -u CORE_API_URL npm test -w web  -- src/routes/stream/server.test.ts"
-docker exec textcaster-core sh -c "cd /app && npm test -w core -- test/feed.test.ts"
-docker exec textcaster-web  sh -c "cd /app && env -u CORE_API_URL npm run check -w web"
+docker exec rsc-web  sh -c "cd /app && env -u CORE_API_URL npm test -w web  -- src/routes/stream/server.test.ts"
+docker exec rsc-core sh -c "cd /app && npm test -w core -- test/feed.test.ts"
+docker exec rsc-web  sh -c "cd /app && env -u CORE_API_URL npm run check -w web"
 ```
 
 **Gotcha 1 — `EACCES` on `.vite-temp` (host).** The dev stack bind-mounts the
@@ -79,5 +79,5 @@ they don't need it.
 - LSP diagnostics like `SqliteRepository is missing <method>` are stale reindex
   artifacts during active development — `npm run typecheck -w core` is the
   authority; if it prints 0 errors, the code is fine.
-- Container names assume the dev compose defaults (`textcaster-web`,
-  `textcaster-core`); adjust if you renamed the services.
+- Container names assume the dev compose defaults (`rsc-web`,
+  `rsc-core`); adjust if you renamed the services.

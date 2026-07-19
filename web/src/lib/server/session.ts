@@ -3,8 +3,11 @@ import { env } from '$env/dynamic/private'
 
 const base = () => env.CORE_API_URL ?? 'http://localhost:8787'
 
+// Matches `rsc.session_token` and better-auth's production `__Secure-` variant,
+// but NOT a pre-rename `textcaster.session_token`: a stale one must fall through
+// to a fresh anonymous mint, else guests post with a cookie core rejects.
 export function hasSession(cookies: Cookies): boolean {
-	return cookies.getAll().some((c) => c.name.includes('session_token'))
+	return cookies.getAll().some((c) => c.name.includes('rsc.session_token'))
 }
 
 export function cookieHeader(cookies: Cookies): string | null {

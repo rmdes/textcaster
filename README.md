@@ -204,8 +204,9 @@ Standards-forward, few dependencies, no framework lock-in:
 RSC stands on ideas and standards it did not invent:
 
 - **Dave Winer** and [textcasting.org](https://textcasting.org) — the
-  Textcasting manifesto, RSS, OPML, rssCloud, and the
-  [rss.chat](https://github.com/scripting/rss.chat) idea this reimagines.
+  Textcasting manifesto, RSS, OPML, rssCloud, and
+  [rss.chat](https://github.com/scripting/rss.chat), whose conversations RSC
+  interops with.
 - **The IndieWeb community** — Micropub, Webmention, IndieAuth, and
   microformats2.
 - **JSON Feed** — Manton Reece and Brent Simmons.
