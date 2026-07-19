@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth'
-import { anonymous, magicLink } from 'better-auth/plugins'
+import type { BetterAuthPlugin } from 'better-auth'
+import { anonymous, magicLink, openAPI } from 'better-auth/plugins'
 import type Database from 'better-sqlite3'
 import type { User } from './domain/types.ts'
 import type { Mailer } from './mail.ts'
@@ -14,9 +15,36 @@ export interface AuthDeps {
   webOrigin: string
   anonTtlDays: number
   mailer: Mailer | null
+  authOpenApi: boolean
 }
 
 export function createAuth(deps: AuthDeps) {
+  const plugins: BetterAuthPlugin[] = [
+    magicLink({
+      sendMagicLink: async ({ email, url }) => {
+        if (!deps.mailer) throw new Error('email is not configured on this instance')
+        await deps.mailer.send(email, 'Your Textcaster login link', `Log in: ${url}`)
+      },
+    }),
+    anonymous({
+      // Fires on ANY sign-in/sign-up while an anonymous session exists
+      // (probed) — registration upgrade AND plain login both land here.
+      async onLinkAccount({ anonymousUser, newUser }) {
+        const guest = await deps.users.getUserByAuthUserId(anonymousUser.user.id)
+        if (!guest) return // guest never acted — nothing to carry over
+        const existing = await deps.users.getUserByAuthUserId(newUser.user.id)
+        if (existing) return // login into an established account: abandon the guest, the sweep reclaims it
+        // Fresh registration: re-point the guest's core row. A throw here
+        // aborts better-auth's anon-user deletion (probed ordering) — the
+        // guest identity survives a failed re-point.
+        await deps.users.setAuthUserId(guest.id, newUser.user.id)
+      },
+    }),
+  ]
+  // Dev-only OpenAPI reference (spec 2026-07-19). Routes ride the /api/auth/*
+  // mount; the web proxy independently 404s them so this never goes public.
+  if (deps.authOpenApi) plugins.push(openAPI())
+
   return betterAuth({
     database: deps.sqlite,
     secret: deps.secret,
@@ -56,28 +84,7 @@ export function createAuth(deps: AuthDeps) {
     // header so the per-IP rate limits use the real client, not one shared
     // global bucket (probed: session.ipAddress then reflects the header).
     advanced: { cookiePrefix: 'textcaster', disableOriginCheck: false, ipAddress: { ipAddressHeaders: ['x-forwarded-for'] } },
-    plugins: [
-      magicLink({
-        sendMagicLink: async ({ email, url }) => {
-          if (!deps.mailer) throw new Error('email is not configured on this instance')
-          await deps.mailer.send(email, 'Your Textcaster login link', `Log in: ${url}`)
-        },
-      }),
-      anonymous({
-        // Fires on ANY sign-in/sign-up while an anonymous session exists
-        // (probed) — registration upgrade AND plain login both land here.
-        async onLinkAccount({ anonymousUser, newUser }) {
-          const guest = await deps.users.getUserByAuthUserId(anonymousUser.user.id)
-          if (!guest) return // guest never acted — nothing to carry over
-          const existing = await deps.users.getUserByAuthUserId(newUser.user.id)
-          if (existing) return // login into an established account: abandon the guest, the sweep reclaims it
-          // Fresh registration: re-point the guest's core row. A throw here
-          // aborts better-auth's anon-user deletion (probed ordering) — the
-          // guest identity survives a failed re-point.
-          await deps.users.setAuthUserId(guest.id, newUser.user.id)
-        },
-      }),
-    ],
+    plugins,
   })
 }
 

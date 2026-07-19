@@ -8,8 +8,8 @@ export function fakeMailer() {
   return { sent, mailer: { send: async (to: string, subject: string, text: string) => void sent.push({ to, subject, text }) } }
 }
 
-export function makeAuth(repo: SqliteRepository, mailer: Mailer | null = fakeMailer().mailer) {
-  return createAuth({ sqlite: repo.raw, users: repo, secret: 'test-secret', webOrigin: 'http://web.test', anonTtlDays: 7, mailer })
+export function makeAuth(repo: SqliteRepository, mailer: Mailer | null = fakeMailer().mailer, authOpenApi = false) {
+  return createAuth({ sqlite: repo.raw, users: repo, secret: 'test-secret', webOrigin: 'http://web.test', anonTtlDays: 7, mailer, authOpenApi })
 }
 
 // better-auth's rate limiter keys on client IP + path; in tests there's no
