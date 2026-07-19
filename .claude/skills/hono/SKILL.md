@@ -3,7 +3,7 @@ name: hono
 description: Use when writing, editing, or reviewing anything in core/ that touches HTTP — routing, middleware, request/response handling, SSE streaming, error handling, auth mounting, or route tests. Keywords: Hono, new Hono, app.get/post, c.json, c.req.valid, MiddlewareHandler, ContextVariableMap, streamSSE, bodyLimit, app.onError, app.request, hono/node-server, better-auth handler.
 ---
 
-# Hono in Textcaster (core/)
+# Hono in RSC (core/)
 
 Hono `^4.x` is core's entire HTTP layer. `core/` is **never browser-facing**
 (CLAUDE.md invariant): the web app is the only client, and it talks to core
@@ -16,7 +16,7 @@ adding a route — match them, don't invent a parallel style.
 
 ## House style — what THIS repo does (and deliberately does NOT)
 
-| Concern | Textcaster does | Do NOT reach for |
+| Concern | RSC does | Do NOT reach for |
 |---|---|---|
 | Errors | `return c.json({ error: '…' }, status)`; domain errors bubble to `app.onError` (`DomainError → 400`) | `HTTPException` / `throw` in handlers |
 | Validation | hand-rolled guards (`isString`, `isValidFeedUrl`, `readJsonBody`) | `@hono/zod-validator`, adding `zod` |
