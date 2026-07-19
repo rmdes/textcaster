@@ -88,11 +88,11 @@
 				<form method="POST" action="?tab={data.tab}&/subscribe" class="add-remote">
 					<label class="visually-hidden" for="sub-url">Feed URL</label>
 					<input id="sub-url" name="url" type="url" placeholder="https://their-site.com/feed.xml" required />
-					<fieldset>
-						<legend class="visually-hidden">Subscription type</legend>
-						<label><input type="radio" name="type" value="webfeed" checked /> a site or publication</label>
-						<label><input type="radio" name="type" value="person" /> an individual</label>
-					</fieldset>
+					<label class="visually-hidden" for="sub-type">Subscription type</label>
+					<select id="sub-type" name="type">
+						<option value="webfeed" selected>a site or publication</option>
+						<option value="person">an individual</option>
+					</select>
 					<button>Subscribe</button>
 				</form>
 			</details>

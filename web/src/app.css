@@ -275,7 +275,8 @@ form.auth-form {
 }
 
 input,
-textarea {
+textarea,
+select {
 	background: var(--color-surface);
 	color: var(--color-foreground);
 	padding: 10px 12px;
@@ -288,7 +289,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
 	border-color: var(--color-ring);
 	outline: none;
 	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 15%, transparent);
@@ -573,17 +575,6 @@ button:hover {
 	min-width: 10rem;
 }
 
-/* Finding 2: fieldset default chrome reset for the radio-pair groups; column
-   flex so the two radio labels keep stacking one per row like every other
-   direct child of .add-remote (a <label> is inline by default). */
-.add-remote fieldset {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-xs);
-	border: 0;
-	margin: 0;
-	padding: 0;
-}
 
 /* Accessibility: label text available to screen readers, hidden visually */
 
