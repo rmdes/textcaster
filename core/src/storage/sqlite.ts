@@ -31,12 +31,12 @@ function rowToPushSubscription(r: PushSubscriptionsTable): PushSubscription {
   return { id: r.id, userId: r.user_id, mode: r.mode, endpoint: r.endpoint, topic: r.topic, callbackToken: r.callback_token, secret: r.secret, state: r.state, expiresAt: r.expires_at, createdAt: r.created_at }
 }
 
-type JoinedRow = PostsTable & { u_id: string; u_kind: 'local' | 'remote'; u_handle: string; u_display_name: string; u_feed_url: string | null; u_created_at: string; u_auth_user_id: string | null }
+type JoinedRow = PostsTable & { u_id: string; u_kind: 'local' | 'remote'; u_handle: string; u_display_name: string; u_feed_url: string | null; u_created_at: string; u_auth_user_id: string | null; u_feed_type: FeedType | null }
 
 function joinedRowToEntry(r: JoinedRow): TimelineEntry {
   return hideResolvedReplyContext({
     ...rowToPost(r),
-    author: { id: r.u_id, kind: r.u_kind, handle: r.u_handle, displayName: r.u_display_name, feedUrl: r.u_feed_url, createdAt: r.u_created_at, authUserId: r.u_auth_user_id },
+    author: { id: r.u_id, kind: r.u_kind, handle: r.u_handle, displayName: r.u_display_name, feedUrl: r.u_feed_url, createdAt: r.u_created_at, authUserId: r.u_auth_user_id, feedType: r.u_feed_type },
   })
 }
 
@@ -223,7 +223,7 @@ export class SqliteRepository implements Repository {
       .selectFrom('posts')
       .innerJoin('users', 'users.id', 'posts.author_id')
       .selectAll('posts')
-      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id'])
+      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id', 'users.feed_type as u_feed_type'])
       .orderBy('posts.published_at', 'desc')
       .orderBy('posts.id', 'desc')
       .limit(limit)
@@ -249,7 +249,7 @@ export class SqliteRepository implements Repository {
       .selectFrom('posts')
       .innerJoin('users', 'users.id', 'posts.author_id')
       .selectAll('posts')
-      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id'])
+      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id', 'users.feed_type as u_feed_type'])
       .where('posts.created_at', '>=', sinceCreatedAt)
       .orderBy('posts.created_at', 'asc')
       .orderBy('posts.id', 'asc')
@@ -282,7 +282,7 @@ export class SqliteRepository implements Repository {
       .selectFrom('posts')
       .innerJoin('users', 'users.id', 'posts.author_id')
       .selectAll('posts')
-      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id'])
+      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id', 'users.feed_type as u_feed_type'])
       .where('users.kind', '=', 'local')
       .orderBy('posts.published_at', 'desc')
       .orderBy('posts.id', 'desc')
@@ -306,7 +306,7 @@ export class SqliteRepository implements Repository {
       .selectFrom('posts')
       .innerJoin('users', 'users.id', 'posts.author_id')
       .selectAll('posts')
-      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id'])
+      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id', 'users.feed_type as u_feed_type'])
       .where((eb) => eb.or([eb('posts.id', '=', rootId), eb('posts.thread_root_id', '=', rootId)]))
       .orderBy('posts.published_at', 'asc')
       .orderBy('posts.id', 'asc')
@@ -408,7 +408,7 @@ export class SqliteRepository implements Repository {
       .selectFrom('posts')
       .innerJoin('users', 'users.id', 'posts.author_id')
       .selectAll('posts')
-      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id'])
+      .select(['users.id as u_id', 'users.kind as u_kind', 'users.handle as u_handle', 'users.display_name as u_display_name', 'users.feed_url as u_feed_url', 'users.created_at as u_created_at', 'users.auth_user_id as u_auth_user_id', 'users.feed_type as u_feed_type'])
       .where('in_reply_to_post_id', '=', id)
       .orderBy('posts.published_at', 'asc')
       .orderBy('posts.id', 'asc')
