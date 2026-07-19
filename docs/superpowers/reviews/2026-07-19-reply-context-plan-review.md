@@ -1,5 +1,40 @@
 # Plan review — reply-context implementation plan (2026-07-19, rev = 36334e3)
 
+## Re-review of rev 4 (7ca75e1): READY — one two-line residual
+
+All ten P-findings landed, verified against the real code, several with the
+exact proposed fix: `svelte/server` component test via a new
+`ReplyContext.svelte` (P1+P5+P9 solved together — the component kills the
+four-copy drift problem better than "textually identical" ever did); the gate
+is a structural generic at THREE sites including `/posts/:id/revisions` (P2)
+with POST/PATCH invariant comments; `truncate` trims-before-cut, exported,
+with the astral-boundary + whitespace tests (P3/P8 — I re-derived the
+`n*2+2` slice edge cases: a lone surrogate at the slice boundary is always
+dropped by the code-point cut, and a bare `…` is impossible since the string
+is pre-trimmed); author-required context (P4) with its test; explicit value
+imports at all three sites (P6); `api.test.ts` (P7); Task 2's sketch now uses
+the real helpers with the FK setup shown (P10 — re-verified: the literal
+covers every required `Post` field, `createRemoteUser({handle, displayName,
+feedUrl})` matches `NewRemoteUser`); hono-skill step opens Task 3; the
+revisions route is unauthenticated so Task 3's test needs no session.
+
+**The residual (fold into Task 4):** `web/vitest.config.ts` is a bare config —
+no svelte plugin — so `import ReplyContext from './ReplyContext.svelte'` in
+the new test fails to compile before it can fail meaningfully.
+`@sveltejs/vite-plugin-svelte` is already a devDependency; add to
+`web/vitest.config.ts`:
+
+```ts
+import { svelte } from '@sveltejs/vite-plugin-svelte'
+// …
+plugins: [svelte()],
+```
+
+(vitest's node environment runs the SSR transform, so the component compiles
+server-side and `svelte/server`'s `render()` works — no DOM env, no new dep.)
+Stage `web/vitest.config.ts` in Task 4's commit. With that line, the plan is
+ready for subagent-driven execution.
+
 High-effort review of `docs/superpowers/plans/2026-07-19-reply-context.md`
 (4 finder angles: core sketches, choke-point coverage, web sketches, spec↔plan
 alignment; every claim grounded in the real files, key ones re-verified
