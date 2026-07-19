@@ -153,6 +153,20 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
 
   app.get('/admin/users', authed, requireAdmin(), (c) => c.json({ users: service.listUsers() }))
 
+  app.get('/admin/settings', authed, requireAdmin(), async (c) =>
+    c.json({ maxSubsPerUser: Number(await service.getSetting('max_subs_per_user') ?? '500') }))
+
+  app.patch('/admin/settings', authed, requireAdmin(), async (c) => {
+    const body = await readJsonBody(c)
+    if (!body) return c.json({ error: 'body invalid' }, 400)
+    const { maxSubsPerUser } = body
+    if (!(typeof maxSubsPerUser === 'number' && Number.isInteger(maxSubsPerUser) && maxSubsPerUser >= 0)) {
+      return c.json({ error: 'maxSubsPerUser invalid' }, 400)
+    }
+    await service.setSetting('max_subs_per_user', String(maxSubsPerUser))
+    return c.json({ maxSubsPerUser }, 200)
+  })
+
   app.get('/admin/feeds', authed, requireAdmin(), async (c) => {
     const feeds = await service.listRemoteUsers()
     return c.json({ feeds: feeds.map((u) => ({ handle: u.handle, displayName: u.displayName, feedUrl: u.feedUrl })) })
