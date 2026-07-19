@@ -57,3 +57,17 @@ only — no Tailwind/shadcn adoption proposed); binding authority:
 Related, already queued in ideas.md: visitor Follow button reuses
 `.unfollow-form`'s destructive red (SP3 final review). A single fix pass can
 take the top-5 + that restyle together — all token-CSS/markup, no new deps.
+
+---
+
+## Disposition (2026-07-19, commit `c336c7d`)
+
+ALL 12 findings + the queued Follow-button restyle implemented in one
+harmonization pass and independently reviewed: per-finding ✅ across the
+board, tokens-only, fieldset reset provably scoped (only two fieldsets exist,
+both in `.add-remote`), `.wedge` bump verified jank-free (static min-height),
+`.admin-nav` focus ring a verbatim copy of `.tabs`', accent-Follow contrast
+≈5.2:1 light / ≈5.0:1 dark on surface (AA), old operator copy grep-confirmed
+gone from all 4 sites. Gates: web 154/154, svelte-check 0/0. One accepted
+judgment call: `.add-remote fieldset` gained flex-column (labels are inline
+by default; without it the radios would sit side-by-side).

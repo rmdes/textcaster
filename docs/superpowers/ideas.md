@@ -820,12 +820,14 @@ a drop-in `plugins: [...]` add. Consult the `better-auth` MCP for current API.
 
 ## SP3 follow-ups (final review 2026-07-19)  *(polish/backlog)*
 
-- **Visitor Follow-button restyle** — the following page's visitor-mode Follow
-  button reuses `.unfollow-form` and renders in `--color-destructive` red on a
-  positive action. ~3-line fix (second class + one accent rule in app.css),
-  through the UI skill + MASTER.md. Grounding:
-  `docs/superpowers/reviews/2026-07-19-subscribe-manage-final-review.md`.
-  Status: queued.
+- **Visitor Follow-button restyle** — ✅ DONE in the UI harmonization pass
+  (`c336c7d`, 2026-07-19): `.follow-row` accent class; Follow reads accent,
+  Unfollow stays destructive. Shipped alongside all 12 findings of
+  `2026-07-19-milestone-ui-ux-review.md`. Status: done.
+- **MASTER.md contrast-table footnote** — the accent-on-SURFACE pair
+  (button text in list rows) isn't tabulated, only accent-on-background;
+  measured ≈5.2:1 light / ≈5.0:1 dark (passes AA). Add the row at the next
+  MASTER revision. Status: queued (docs-only).
 - **Near-miss own-instance URL 404-shadow** — subscribing to
   `<publicUrl>/users/<nonexistent>/feed.xml` falls through the local resolve
   and mints a remote row that polls our own 404 forever (pre-existing OPML
