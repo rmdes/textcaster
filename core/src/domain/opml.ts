@@ -62,6 +62,7 @@ export interface ImportDeps {
   addFollow: (follower: User, target: User) => Promise<boolean>
   getSetting: (key: string) => Promise<string | undefined>
   countRemoteSubscriptions: (userId: string) => Promise<number>
+  getRemoteUserByFeedUrl: (url: string) => Promise<User | undefined>
   publicUrl: string | null
 }
 
@@ -103,13 +104,17 @@ export async function importFollowingOpml(deps: ImportDeps, follower: User, body
       const existing = byFeedUrl.get(xmlUrl)
       if (existing) {
         if (subCount >= subCap) { skipped++; continue }
-        await deps.addFollow(follower, existing); followed++; subCount++; continue
+        if (await deps.addFollow(follower, existing)) { followed++; subCount++ } else skipped++
+        continue
       }
       // Case 2: one of our own minted local feed URLs (H2).
       const localHandle = localHandleForUrl(xmlUrl, deps.publicUrl)
       if (localHandle) {
         const localUser = await deps.getUserByHandle(localHandle)
-        if (localUser && localUser.kind === 'local') { await deps.addFollow(follower, localUser); followed++; continue }
+        if (localUser && localUser.kind === 'local') {
+          if (await deps.addFollow(follower, localUser)) followed++; else skipped++
+          continue
+        }
       }
       // Case 3: create a remote user, then follow — gated by the cap, and by
       // the SSRF guard (Addendum A) since this is the only case that mints a
@@ -131,7 +136,17 @@ export async function importFollowingOpml(deps: ImportDeps, follower: User, body
           throw err // invalid feedUrl scheme etc. → outer catch skips
         }
       }
-      if (!handleUser) { skipped++; continue } // exhausted attempts
+      if (!handleUser) {
+        // Mint exhausted — a concurrent create may have won the feed_url race
+        // (HandleTakenError is a UNIQUE collision on either column). Re-resolve
+        // and follow the winner instead of skipping (mirrors subscribeByUrl).
+        const raced = await deps.getRemoteUserByFeedUrl(xmlUrl)
+        if (raced) {
+          byFeedUrl.set(xmlUrl, raced)
+          if (await deps.addFollow(follower, raced)) { followed++; subCount++ } else skipped++
+        } else skipped++
+        continue
+      }
       byFeedUrl.set(xmlUrl, handleUser)
       await deps.addFollow(follower, handleUser)
       created++; followed++; subCount++

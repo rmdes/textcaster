@@ -279,6 +279,7 @@ export function createApp(deps: { service: Service; bus: EventBus; token: string
         addFollow: (f, t) => service.addFollow(f, t),
         getSetting: (k) => service.getSetting(k),
         countRemoteSubscriptions: (uid) => service.countRemoteSubscriptions(uid),
+        getRemoteUserByFeedUrl: (u) => service.getRemoteUserByFeedUrl(u),
         publicUrl: feeds.publicUrl,
       },
       follower,

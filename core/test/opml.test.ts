@@ -30,6 +30,7 @@ import { importFollowingOpml } from '../src/domain/opml.ts'
 import { createSqliteRepository } from '../src/storage/sqlite.ts'
 import { createEventBus } from '../src/domain/bus.ts'
 import { createService } from '../src/domain/service.ts'
+import { HandleTakenError } from '../src/domain/types.ts'
 
 async function importSetup(publicUrl: string | null) {
   const repo = await createSqliteRepository(':memory:')
@@ -42,6 +43,7 @@ async function importSetup(publicUrl: string | null) {
     addFollow: async (f: typeof follower, t: typeof follower) => { await svc.addFollow(f, t); return true },
     getSetting: (k: string) => repo.getSetting(k),
     countRemoteSubscriptions: (userId: string) => repo.countRemoteSubscriptions(userId),
+    getRemoteUserByFeedUrl: (u: string) => repo.getRemoteUserByFeedUrl(u),
     publicUrl,
   }
   return { repo, svc, follower, deps }
@@ -149,4 +151,30 @@ test('import skips a private/loopback xmlUrl without creating a row (addendum A 
   const r = await importFollowingOpml(deps, follower, opml)
   expect(r).toEqual({ followed: 0, created: 0, skipped: 1 })
   expect((await repo.listRemoteUsers()).length).toBe(0)
+})
+
+test('import: an existing instance feed in the OPML counts skipped, not followed', async () => {
+  const { svc, follower, deps } = await importSetup('https://cast.example')
+  // an instance feed already in the DB, matched by feedUrl (case 1)
+  await svc.addRemoteUser({ handle: 'peer', displayName: 'Peer', feedUrl: 'https://peer.example/textcast.xml', feedType: 'instance' })
+  const follows: Array<[string, string]> = []
+  deps.addFollow = async (f, t) => (t.feedType === 'instance' || t.id === f.id ? false : (follows.push([f.id, t.id]), true))
+  const opml = `<opml><body><outline type="rss" text="Peer" xmlUrl="https://peer.example/textcast.xml"/></body></opml>`
+  const r = await importFollowingOpml(deps, follower, opml)
+  expect(r).toEqual({ followed: 0, created: 0, skipped: 1 })
+  expect(follows).toEqual([])
+})
+
+test('import Case-3: a concurrent create winning the feed_url race is followed via re-resolve', async () => {
+  const { repo, svc, follower, deps } = await importSetup(null)
+  // the "winner": a row a concurrent request created between our byFeedUrl
+  // snapshot and our own addRemoteUser call (HandleTakenError is the UNIQUE
+  // collision on feed_url that surfaces the race).
+  const winner = await svc.addRemoteUser({ handle: 'winner', displayName: 'Winner', feedUrl: 'https://203.0.113.50/f.xml', feedType: 'webfeed' })
+  deps.listRemoteUsers = async () => [] // byFeedUrl snapshot predates the winner's insert
+  deps.addRemoteUser = async () => { throw new HandleTakenError('handle or feed_url taken') }
+  const opml = `<opml><body><outline type="rss" text="Race" xmlUrl="https://203.0.113.50/f.xml"/></body></opml>`
+  const r = await importFollowingOpml(deps, follower, opml)
+  expect(r).toEqual({ followed: 1, created: 0, skipped: 0 })
+  expect((await repo.listFollowing(follower.id)).map((u) => u.id)).toEqual([winner.id])
 })
