@@ -185,3 +185,44 @@ export async function deletePost(f: typeof fetch, id: string): Promise<void> {
 	const res = await f(`${base()}/admin/posts/${encodeURIComponent(id)}`, { method: 'DELETE' })
 	if (!res.ok) throw new Error(await errorMessage(res, 'deletePost failed'))
 }
+
+export interface DeviceSession {
+	session: { token: string }
+	user: { id: string; email: string; name: string; isAnonymous?: boolean }
+}
+
+// GET (M3). f already carries cookie + Origin.
+export async function listDeviceSessions(f: typeof fetch): Promise<DeviceSession[]> {
+	const res = await f(`${base()}/api/auth/multi-session/list-device-sessions`)
+	if (!res.ok) throw new Error(await errorMessage(res, `sessions ${res.status}`))
+	return (await res.json()) as DeviceSession[]
+}
+
+// The active auth user id (better-auth's /get-session); null when signed out.
+export async function getActiveAuthUserId(f: typeof fetch): Promise<string | null> {
+	const res = await f(`${base()}/api/auth/get-session`)
+	if (!res.ok) return null
+	const body = (await res.json()) as { user?: { id?: string } } | null
+	return body?.user?.id ?? null
+}
+
+// POST; caller relays the Set-Cookie the plugin returns.
+export async function setActiveSession(f: typeof fetch, sessionToken: string): Promise<Response> {
+	const res = await f(`${base()}/api/auth/multi-session/set-active`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ sessionToken })
+	})
+	if (!res.ok) throw new Error(await errorMessage(res, `set-active ${res.status}`))
+	return res
+}
+
+export async function revokeSession(f: typeof fetch, sessionToken: string): Promise<Response> {
+	const res = await f(`${base()}/api/auth/multi-session/revoke`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ sessionToken })
+	})
+	if (!res.ok) throw new Error(await errorMessage(res, `revoke ${res.status}`))
+	return res
+}

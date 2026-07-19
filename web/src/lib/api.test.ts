@@ -11,7 +11,11 @@ import {
 	editPost,
 	getRevisions,
 	deleteLocalAccount,
-	deletePost
+	deletePost,
+	listDeviceSessions,
+	getActiveAuthUserId,
+	setActiveSession,
+	revokeSession
 } from './api.ts'
 
 const entry = {
@@ -150,4 +154,43 @@ test('deletePost DELETEs /admin/posts/:id', async () => {
 test('deletePost surfaces the core error', async () => {
 	const f = vi.fn(async () => new Response(JSON.stringify({ error: 'not a local post' }), { status: 409 }))
 	await expect(deletePost(f as unknown as typeof fetch, 'p1')).rejects.toThrow('not a local post')
+})
+
+test('listDeviceSessions GETs the multi-session list endpoint', async () => {
+	const rows = [{ session: { token: 't1' }, user: { id: 'u1', email: 'a@x', name: 'a@x' } }]
+	const f = vi.fn(async () => new Response(JSON.stringify(rows), { status: 200 }))
+	const out = await listDeviceSessions(f as unknown as typeof fetch)
+	expect(out).toEqual(rows)
+	const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit | undefined]
+	expect(url).toContain('/api/auth/multi-session/list-device-sessions')
+	expect(init?.method ?? 'GET').toBe('GET')
+})
+
+test('getActiveAuthUserId reads /get-session user id, null when signed out', async () => {
+	const f1 = vi.fn(async () => new Response(JSON.stringify({ session: {}, user: { id: 'u9' } }), { status: 200 }))
+	await expect(getActiveAuthUserId(f1 as unknown as typeof fetch)).resolves.toBe('u9')
+	const f2 = vi.fn(async () => new Response('null', { status: 200 }))
+	await expect(getActiveAuthUserId(f2 as unknown as typeof fetch)).resolves.toBeNull()
+})
+
+test('setActiveSession POSTs the token as JSON and returns the response for cookie relay', async () => {
+	const res = new Response('{}', { status: 200 })
+	const f = vi.fn(async () => res)
+	const out = await setActiveSession(f as unknown as typeof fetch, 'tok')
+	expect(out).toBe(res)
+	const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit]
+	expect(url).toContain('/api/auth/multi-session/set-active')
+	expect(init.method).toBe('POST')
+	expect(new Headers(init.headers).get('content-type')).toBe('application/json')
+	expect(JSON.parse(String(init.body))).toEqual({ sessionToken: 'tok' })
+})
+
+test('revokeSession POSTs the token to the revoke endpoint', async () => {
+	const res = new Response('{}', { status: 200 })
+	const f = vi.fn(async () => res)
+	const out = await revokeSession(f as unknown as typeof fetch, 'old')
+	expect(out).toBe(res)
+	const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit]
+	expect(url).toContain('/api/auth/multi-session/revoke')
+	expect(JSON.parse(String(init.body))).toEqual({ sessionToken: 'old' })
 })
