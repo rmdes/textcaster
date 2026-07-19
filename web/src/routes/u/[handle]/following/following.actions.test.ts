@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest'
-import { actions } from './+page.server.ts'
+import { actions, load } from './+page.server.ts'
 
 function formRequest(action: string, fields: Record<string, string>): Request {
 	const body = new URLSearchParams(fields)
@@ -89,4 +89,22 @@ test('import NEVER mints a session — registered-only, core 403s anonymous', as
 	expect(headers.get('origin')).toBe('http://x')
 	expect(res).toMatchObject({ status: 400 })
 	expect((res as { data: { error: string } }).data.error).toBe('not authenticated')
+})
+
+test('following load lowercases the handle, computes isOwner, and instance-filters followIds', async () => {
+	const fetch = vi.fn(async (url: string | URL) =>
+		String(url).includes('/follows')
+			? new Response(JSON.stringify({ following: [
+					{ id: 'f1', handle: 'w', displayName: 'W', kind: 'remote', feedType: 'webfeed' },
+					{ id: 'f2', handle: 'i', displayName: 'I', kind: 'remote', feedType: 'instance' }
+				] }), { status: 200 })
+			: new Response(JSON.stringify({ timeline: [], nextCursor: null }), { status: 200 })
+	)
+	const me = { user: { id: 'me1', handle: 'alice', displayName: 'Alice', kind: 'local' as const }, isAnonymous: false }
+	const owner = (await load({ fetch, params: { handle: 'Alice' }, url: new URL('http://x/u/Alice/following'), parent: async () => ({ me }) } as never)) as { handle: string; isOwner: boolean; followIds: string[] }
+	expect(owner.handle).toBe('alice')
+	expect(owner.isOwner).toBe(true)
+	expect(owner.followIds).toEqual(['f1'])
+	const visitor = (await load({ fetch, params: { handle: 'bob' }, url: new URL('http://x/u/bob/following'), parent: async () => ({ me }) } as never)) as { isOwner: boolean }
+	expect(visitor.isOwner).toBe(false)
 })

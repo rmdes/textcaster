@@ -4,17 +4,20 @@ import { getTimeline, getFollowing, addFollow, removeFollow, importOpml } from '
 import { enrichEntries } from '$lib/server/render'
 import { authedFetch, cookieHeader, ensureSessionFetch } from '$lib/server/session'
 
-export const load: PageServerLoad = async ({ fetch, params, url }) => {
+export const load: PageServerLoad = async ({ fetch, params, url, parent }) => {
+	const handle = params.handle.toLowerCase() // handles are stored lowercase; a mixed-case URL must not demote the owner to visitor mode
 	const before = url.searchParams.get('before') ?? undefined
 	const isFirstPage = !before
+	const { me } = await parent()
+	const isOwner = me?.user.handle === handle
 	try {
 		const [{ timeline, nextCursor }, following] = await Promise.all([
-			getTimeline(fetch, { before, followedBy: params.handle }),
-			getFollowing(fetch, params.handle)
+			getTimeline(fetch, { before, followedBy: handle }),
+			getFollowing(fetch, handle)
 		])
-		return { handle: params.handle, timeline: enrichEntries(timeline), nextCursor, isFirstPage, following, followIds: following.map((u) => u.id) }
+		return { handle, isOwner, timeline: enrichEntries(timeline), nextCursor, isFirstPage, following, followIds: following.filter((u) => u.feedType !== 'instance').map((u) => u.id) }
 	} catch {
-		return { handle: params.handle, timeline: [], nextCursor: null, isFirstPage, following: [], followIds: [], coreDown: true }
+		return { handle, isOwner, timeline: [], nextCursor: null, isFirstPage, following: [], followIds: [], coreDown: true }
 	}
 }
 

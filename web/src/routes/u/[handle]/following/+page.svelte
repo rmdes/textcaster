@@ -17,7 +17,8 @@
 	const posts = $derived([...live, ...data.timeline])
 
 	function onPost(entry: TimelineEntry) {
-		if (keepEvent(entry, { kind: 'followed', followIds: followSet }) && !posts.some((p) => p.id === entry.id)) live = [entry, ...live]
+		const keep = keepEvent(entry, { kind: 'followed', followIds: followSet }) || entry.author.handle === data.handle
+		if (keep && !posts.some((p) => p.id === entry.id)) live = [entry, ...live]
 	}
 
 	let expanded = $state<Record<string, TimelineEntry[]>>({})
@@ -48,46 +49,67 @@
 	{#if data.coreDown}<p class="notice" role="alert">Core API unreachable — is the core server running?</p>{/if}
 	{#if form?.error}<p class="error" role="alert">{form.error}</p>{/if}
 	{#if form?.ok && form.result}
-		<p class="import-result">Imported: {form.result.followed} followed, {form.result.created} created, {form.result.skipped} skipped.</p>
+		<p class="import-result">Imported: {form.result.followed} followed, {form.result.created} created, {form.result.skipped} skipped (unfetchable, duplicate, or over your subscription cap).</p>
 	{/if}
 
-	<p class="auth-note">Following and unfollowing here act as you, not as @{data.handle}.</p>
+	{#if !data.isOwner}
+		<p class="auth-note">Follow buttons here act as you, not as @{data.handle}.</p>
+	{/if}
 
-	<details class="panel" open>
-		<summary>Follow someone</summary>
-		<form method="POST" action="?/follow" class="follow-form">
-			<label class="visually-hidden" for="follow-target">Handle to follow</label>
-			<input id="follow-target" name="target" placeholder="handle to follow" required />
-			<button>Follow</button>
-		</form>
-	</details>
-
-	{#if data.me && !data.me.isAnonymous}
+	{#if data.isOwner}
 		<details class="panel">
-			<summary>Import OPML</summary>
-			<form method="POST" action="?/import" enctype="multipart/form-data" class="import-form">
-				<label class="visually-hidden" for="import-opml">OPML file to import</label>
-				<input id="import-opml" type="file" name="opml" accept=".opml,.xml,text/xml" required />
-				<button>Import OPML</button>
+			<summary>Subscribe to a feed</summary>
+			<form method="POST" action="/?/subscribe" class="add-remote">
+				<label class="visually-hidden" for="sub-url">Feed URL</label>
+				<input id="sub-url" name="url" type="url" placeholder="https://their-site.com/feed.xml" required />
+				<label><input type="radio" name="type" value="webfeed" checked /> a site or publication</label>
+				<label><input type="radio" name="type" value="person" /> an individual</label>
+				<button>Subscribe</button>
 			</form>
 		</details>
-	{:else}
-		<p class="auth-note">Register to add feeds.</p>
+		<details class="panel" open>
+			<summary>Follow someone</summary>
+			<form method="POST" action="?/follow" class="follow-form">
+				<label class="visually-hidden" for="follow-target">Handle to follow</label>
+				<input id="follow-target" name="target" placeholder="handle to follow" required />
+				<button>Follow</button>
+			</form>
+		</details>
+
+		{#if data.me && !data.me.isAnonymous}
+			<details class="panel">
+				<summary>Import OPML</summary>
+				<form method="POST" action="?/import" enctype="multipart/form-data" class="import-form">
+					<label class="visually-hidden" for="import-opml">OPML file to import</label>
+					<input id="import-opml" type="file" name="opml" accept=".opml,.xml,text/xml" required />
+					<button>Import OPML</button>
+				</form>
+			</details>
+		{:else}
+			<p class="auth-note">Register to add feeds.</p>
+		{/if}
 	{/if}
 
 	<section>
-		<h2>@{data.handle}'s following</h2>
+		<h2>{data.isOwner ? 'Your subscriptions' : `@${data.handle} follows`}</h2>
 		{#if data.following.length === 0}
-			<p class="subnav">Not following anyone yet.</p>
+			<p class="subnav">{data.isOwner ? "You're not following anything yet — subscribe above." : `@${data.handle} isn't following anything yet.`}</p>
 		{:else}
 			<ul class="following-list">
 				{#each data.following as u (u.id)}
 					<li>
-						<span><a href="/u/{u.handle}">@{u.handle}</a> <span class="badge-kind">{u.kind}</span></span>
-						<form method="POST" action="?/unfollow" class="unfollow-form">
-							<input type="hidden" name="target" value={u.handle} />
-							<button>Unfollow</button>
-						</form>
+						<span><a href="/u/{u.handle}">@{u.handle}</a> <span class="badge-kind">{u.kind}</span>{#if u.feedType === 'instance'}<span class="badge-kind">instance</span>{/if}</span>
+						{#if data.isOwner}
+							<form method="POST" action="?/unfollow" class="unfollow-form">
+								<input type="hidden" name="target" value={u.handle} />
+								<button>Unfollow</button>
+							</form>
+						{:else}
+							<form method="POST" action="?/follow" class="unfollow-form">
+								<input type="hidden" name="target" value={u.handle} />
+								<button>Follow</button>
+							</form>
+						{/if}
 					</li>
 				{/each}
 			</ul>
