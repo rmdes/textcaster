@@ -46,6 +46,48 @@ alongside it (section below). Remaining follow-ups + adjacent deferrals:
 
 ---
 
+## IndieWeb layer — milestone-suite (decomposition, 2026-07-19)
+
+Textcaster today **consumes** microformats (feed discovery ingests h-feed/h-entry/
+h-card; reply-context h-cite shipped) but **emits zero mf2** (`grep h-entry|h-feed|
+h-card|rel=me web/src` = empty) and speaks none of the IndieWeb protocols. "The
+IndieWeb layer" is therefore a **publish/interop gap** and a *suite* of independent
+sub-projects — captured here as one milestone theme so the pieces (several already
+have their own entries below / in Roadmap stubs) are sequenced, not scattered. Each
+gets its own spec → plan → SDD cycle when picked up. **Not started; roadmap only.**
+
+- **A — Emit mf2 ("the page is the feed")** *(foundational)* — mark up our rendered
+  HTML: `.timeline`→h-feed, `.post`→h-entry (`e-content`, `u-url`/`u-uid`,
+  `dt-published`), byline→nested **h-card** (`p-name`/`u-url`/`u-photo`), replies→
+  `u-in-reply-to`; a **representative h-card per user** at `/u/:handle`; optionally an
+  instance-level h-card. Detail: [[The page is the feed]] entry below. Self-dogfoods
+  (`discoverFeed` could read our own pages) and **unlocks B/C/G**.
+- **B — rel=me + h-card verification** — users list "also me" URLs; render `rel="me"`
+  on their h-card (from A); Textcaster fetches each and checks the *back-link* →
+  "confirmed" badge, decoupled from auth. Detail: [[Confirmed elsewhere]] entry below.
+  Extends A's h-cards.
+- **C — Webmention (in/out)** — send when a local post replies-to/links an external
+  URL advertising a webmention endpoint; receive + thread mentions to local posts.
+  Needs A (parseable mf2 sources + discoverable targets). Roadmap stub.
+- **D — IndieAuth sign-in** — claim a remote identity by domain ownership, on the
+  better-auth foundation. Roadmap stub; conceptually pairs with B's rel=me.
+- **E — Micropub (posting-in)** — post to your instance from any Micropub client.
+  Roadmap stub. Independent auth/API surface.
+- **F — Microsub (reading-out)** — expose the timeline as Microsub channels + JF2 so
+  IndieWeb readers (Monocle, Together) read your Textcaster river. Detail:
+  [[Microsub read endpoint]] entry below. Independent read-API surface.
+- **G — u-syndication links** — "this post also lives at…" (POSSE ledger). Detail:
+  [[Syndication links]] entry below. Small add-on to A's h-entry.
+- ✅ **Reply-context h-cite (consume)** — SHIPPED 2026-07-19 (below).
+
+**Dependency shape / sequencing:** **A is the foundation** (inverse of what we already
+consume; most on-vision; no-JS-native) → **B/C/G build on it** → **D, E, F** are
+independent tracks sequenced by appetite. Recommended first when picked up: **A**
+(emit mf2 + representative h-cards). Coordinate with the in-flight per-user-feeds
+milestone before opening this as a concurrent large thread.
+
+---
+
 ## Technical debt — verified open (SP1+SP2 debt-verification pass)
 
 A verification pass over the admin milestone's debt: only the **still-open**
@@ -444,7 +486,10 @@ feeds.
 
 ## Reply-context that rides along — consume the embedded `h-cite` in `in-reply-to`  *(Aaron-lens round)*
 
-**Status:** candidate (Aaron-lens — best value of the round; it's *also a bug fix*).
+**Status:** ✅ SHIPPED (2026-07-19, on `main`, not yet deployed) — parse h-cite →
+thread ref (fixed the orphan bug) + author-gated author/snippet context, trust-gated
+(nulled once resolved) + plain-text render on 4 surfaces. Part of the **IndieWeb
+layer** milestone-suite (consume side of A). Original writeup retained below.
 
 **Mechanism.** When Textcaster ingests an h-feed, `discovery.ts` reads each
 entry's `in-reply-to` **only if it's a bare URL string**; if it's an *object* (an
