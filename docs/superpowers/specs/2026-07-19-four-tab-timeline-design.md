@@ -34,10 +34,13 @@ Decisions made in this brainstorm:
   earmarked); Federated live-filtering is blocked on exactly that field.
 - **Tabs are `?tab=` on `/`** — single route, one load function, composes with
   `?before`; no new routes, no redirect hop, no-JS-first real links.
-- **Personal river includes your own posts** (rev 1). No auto self-follow
-  exists, and compose redirects to `/` → Personal default — without
-  self-inclusion a registered user's fresh post would be invisible on the page
-  they land on.
+- **The Personal river includes the viewer's own posts** (rev 1). There is no
+  self-follow edge, so a pure `followed_by` filter would hide your own posts —
+  and `?/compose` lands registered users on Personal, so a fresh post would
+  vanish. Core's `followedBy` branch gains `OR author_id = <follower>`; the
+  live lens adds the viewer's own id to `followIds`. Accepted side effect:
+  `/u/:handle/following`'s timeline (same filter) now also shows the owner's
+  own posts — "a river includes its owner."
 
 ## Grok findings the design leans on
 
