@@ -1,7 +1,8 @@
 # Four-tab web timeline (SP2) — design
 
 **Milestone:** Per-user feeds / feed-reader (sub-project 2 of 3)
-**Date:** 2026-07-19
+**Date:** 2026-07-19 · **rev 1** (clean-context correctness + ponytail reviews
+folded — see `../reviews/2026-07-19-four-tab-timeline-spec-review.md`)
 **Depends on:** SP1 engine (commits `8ffd69a..734d8d0` on main) — see
 `2026-07-19-per-user-feeds-engine-design.md` for the milestone model.
 
@@ -33,6 +34,10 @@ Decisions made in this brainstorm:
   earmarked); Federated live-filtering is blocked on exactly that field.
 - **Tabs are `?tab=` on `/`** — single route, one load function, composes with
   `?before`; no new routes, no redirect hop, no-JS-first real links.
+- **Personal river includes your own posts** (rev 1). No auto self-follow
+  exists, and compose redirects to `/` → Personal default — without
+  self-inclusion a registered user's fresh post would be invisible on the page
+  they land on.
 
 ## Grok findings the design leans on
 
@@ -46,7 +51,7 @@ Decisions made in this brainstorm:
   `getThread` (~:309), `listRepliesByPostId` (~:411). Live-post emission
   (`bus.emitNewPost` from `createLocalPostAs`/`editLocalPost`/ingest) carries a
   full `User` author, which already includes `feedType`.
-- `listFollowing` (`sqlite.ts:197-206`) returns **all** follows unfiltered —
+- `listFollowing` (`sqlite.ts:196-206`) returns **all** follows unfiltered —
   local users (`feedType` null) and any vestigial instance follows included —
   and its select does carry `feed_type`. The web wrapper (`getFollowing`,
   `web/src/lib/api.ts:54-58`) types the result without `feedType`, discarding it.
@@ -63,13 +68,22 @@ Decisions made in this brainstorm:
 
 ## Design
 
-### 1. Core: `author.feedType` on entries
+### 1. Core: `author.feedType` on entries + self-inclusive personal river
 
-In `core/src/storage/sqlite.ts`: add `'users.feed_type as u_feed_type'` to the
-five joined select lists above; add `u_feed_type: string | null` to `JoinedRow`;
-add `feedType: r.u_feed_type` (cast to `FeedType | null`) in
-`joinedRowToEntry`'s author literal. Every `/timeline`, thread, reply, and SSE
-entry then carries `author.feedType`. No route or service changes.
+In `core/src/storage/sqlite.ts`:
+
+- Add `'users.feed_type as u_feed_type'` to the five joined select lists above;
+  add `u_feed_type: FeedType | null` to `JoinedRow` (`UsersTable.feed_type` is
+  already so typed — no cast anywhere); add `feedType: r.u_feed_type` in
+  `joinedRowToEntry`'s author literal. Every `/timeline`, thread, reply, and
+  SSE entry then carries `author.feedType`.
+- **`followedBy` becomes self-inclusive** (rev 1): the branch's WHERE becomes
+  `(posts.author_id = <follower> OR posts.author_id IN (SELECT followed_id …))`,
+  keeping the standing instance-exclusion clause (self is local, `feed_type`
+  NULL → passes). Accepted semantic side-effect: `/u/:handle/following` (same
+  filter) now also shows the owner's own posts — "x's river" reading.
+
+No route or service changes.
 
 ### 2. Web plumbing
 
@@ -84,28 +98,36 @@ entry then carries `author.feedType`. No route or service changes.
 
 `web/src/routes/+page.server.ts`:
 
-- `tab = url.searchParams.get('tab')`; valid values
-  `local | federated | personal | public`. Missing or invalid → the viewer's
-  default: **registered → `personal`, anon/guest → `public`** (`me` comes from
-  the layout load via `await parent()` — no duplicate `getMe` fetch).
+- Tab resolution is a **pure helper** (e.g. `web/src/lib/tabs.ts`), unit-tested
+  directly: raw `?tab` + `me` → resolved tab. Valid values
+  `local | federated | personal | public`. Missing, invalid, **or `personal`
+  as a guest** → the viewer's default: **registered/anon with a session →
+  their rule (registered → `personal`, anon → `public`), guest → `public`**
+  (`me` comes from the layout load via `await parent()` — no duplicate `getMe`
+  fetch; a guest never resolves to `personal`, so no login-CTA branch exists).
 - Tab → filter: `local → { source: 'local' }` · `federated →
   { feedType: 'instance' }` · `personal → { followedBy: me.user.handle }` ·
   `public → {}`.
-- `tab === 'personal'`:
-  - guest (`me == null`) → skip the timeline call; return an
-    empty timeline + a flag the page renders as a "log in to build your
-    personal river" empty state.
-  - otherwise → `getTimeline({ before, followedBy })` in parallel with
-    `getFollowing(me.user.handle)`; return
-    `followIds = following.filter(u => u.feedType !== 'instance').map(u => u.id)`
-    for the live lens (vestigial instance follows must not leak into the
-    client-side filter; server-side `followed_by` already excludes them).
+- `tab === 'personal'` (always a session-holder): `getTimeline({ before,
+  followedBy })`, and **on the first page only** (`!before` — `LiveTimeline`
+  only mounts there) in parallel `getFollowing(me.user.handle)`; return
+  `followIds = [me.user.id, ...following.filter(u => u.feedType !== 'instance').map(u => u.id)]`
+  for the live lens — self included (mirrors the self-inclusive server filter),
+  vestigial instance follows excluded.
 - Return `tab` (resolved, not raw) so the page renders `aria-current` and the
   pagination link server-side.
 - The "Older posts" link becomes `/?tab=<tab>&before=<cursor>` — the resolved
   tab is always explicit in paginated URLs (never omitted as "default"), so
   they stay stable if auth state changes.
-- `?feed` flash and `getPeers` widget unchanged.
+- **Form actions preserve the active tab** (rev 1 — named-action URLs replace
+  the query string, so today a submit from `/?tab=local` would land on the
+  default): form `action` attributes become `?tab=<tab>&/compose` etc., and
+  success redirects carry the tab — `redirect(303, '/?tab=<tab>')` for
+  `compose`/`deletePost`. `addRemote` instead redirects to
+  `/?tab=public&feed=<handle>` regardless of origin: the flash copy ("its
+  posts appear in your timeline") is only true on Public — the form itself is
+  repointed in SP3.
+- `getPeers` widget unchanged.
 
 ### 4. Tab bar
 
@@ -114,15 +136,13 @@ consumer — no component file), placed at the top of `<main>`, above the
 timeline, inside the 42rem measure. Four real links `/?tab=…` in fixed order
 Local · Federated · Personal · Public, always all visible to every viewer.
 
-- Active tab: SSR `aria-current="page"`; styled via `[aria-current]` selector —
-  `--color-foreground` text + 2px `--color-accent` underline.
-- Inactive: `--color-secondary` (matches `.subnav`), hover surface
-  `--color-muted`, `cursor: pointer`, no layout-shifting hover.
-- Focus: the standing ring pattern
-  (`box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 15%, transparent)`).
-- 150–300ms color/border transitions; fixed height so live prepends below
-  never move it; verified in both themes; contrast ≥4.5:1 both states.
-- No new color tokens, no raw hex.
+Styling: **copy the existing `.admin-nav` pattern**
+(`web/src/routes/admin/+layout.svelte:35-59` — SSR `aria-current="page"`,
+`--color-accent` underline on active, `--color-secondary` inactive, hover
+surface), plus the deltas MASTER.md forces: the standing focus-ring pattern
+(`box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 15%, transparent)`),
+fixed height so live prepends never move it, 150–300ms transitions, both
+themes ≥4.5:1 both states. No new color tokens, no raw hex.
 
 ### 5. Live filtering per tab
 
@@ -147,14 +167,17 @@ pages. Notes:
 
 ### 6. Errors and empty states
 
-- Core down: unchanged (`coreDown` banner, empty timeline).
-- Invalid `?tab` → viewer default, no error (UI param, not an API).
-- Personal, registered/anon, zero follows → empty state: "Your personal river
-  is empty — follow people and feeds to fill it," linking to
-  `/u/<handle>/following` (the existing manage surface; SP3 replaces it with
-  richer subscribe UX).
-- Personal, guest → login/register CTA empty state (links to `/login`,
-  `/register`).
+- Core down: `coreDown` banner + empty timeline as today; the load's catch
+  branch still returns the **resolved tab** (and empty `followIds`) so the tab
+  bar renders with correct active state. (Fail-soft `me: null` from the layout
+  makes a transiently-logged-out-looking viewer resolve to `public` — accepted.)
+- Invalid `?tab` (or `personal` as guest) → viewer default, no error (UI
+  param, not an API).
+- Personal, zero follows → empty state: "Your personal river is empty — follow
+  people and feeds to fill it," linking to `/u/<handle>/following` (the
+  existing manage surface; SP3 replaces it with richer subscribe UX). With
+  self-inclusion, a user with own posts but no follows sees their posts, not
+  the empty state.
 - Federated with no instances / Local with no posts → the existing "empty
   timeline" rendering; no special copy.
 
@@ -164,12 +187,14 @@ pages. Notes:
   `author.feedType` is present and correct on `/timeline` entries (instance vs
   webfeed vs local-null) — also closes SP1's deferred "no HTTP-layer test for
   source/feed_type params" minor. Thread/replies sites covered by asserting on
-  one thread fetch.
-- **Web** (in-container): load-function tests — tab→filter mapping (spy on
-  `getTimeline` args), default resolution per auth state (registered/anon/
-  guest), guest-on-personal skips the fetch, invalid tab falls to default,
-  older-link tab threading, `followIds` excludes instance follows. Lens unit
-  tests for the two new kinds. Existing drift-canary and page tests untouched.
+  one thread fetch. New test: `followed_by` self-inclusion (own post appears;
+  instance-exclusion still holds).
+- **Web** (in-container): the tab-resolution helper is tested **directly as a
+  pure function** (defaults per auth state, invalid → default, guest+personal
+  → public, tab → filter mapping) — no load-spy machinery. Slim load tests:
+  personal-tab first-page `followIds` (self included, instances excluded;
+  absent on paginated loads), actions preserving `?tab`. Lens unit tests for
+  the two new kinds. Existing drift-canary and page tests untouched.
 - **Gates:** `npm run -w core typecheck` + `docker compose exec -T web npm run
   check -w web` (type-stripping means vitest alone proves nothing).
 
