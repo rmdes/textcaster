@@ -799,7 +799,8 @@ a drop-in `plugins: [...]` add. Consult the `better-auth` MCP for current API.
   `web/src/lib/server/session.ts` — both assume one active session. Non-trivial;
   needs its own brainstorm on how guest-upgrade behaves with N sessions.
 
-- ✅ **open-api** — **SHIPPED + PUSHED 2026-07-19, NOT deployed** (dev-only:
+- ✅ **open-api** — **SHIPPED + PUSHED 2026-07-19; code rides in prod images
+  (since `8717b86`) but the reference stays OFF in prod** (dev-only:
   `TEXTCASTER_AUTH_OPENAPI=on` mounts the reference; flag defaults off in prod AND
   the web proxy hard-404s `/api/auth/reference` + `/api/auth/open-api/*`). Serves
   an OpenAPI schema + a
