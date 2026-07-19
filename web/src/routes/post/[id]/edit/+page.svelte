@@ -2,7 +2,10 @@
 	import MarkdownComposer from '$lib/MarkdownComposer.svelte'
 	import { enhance } from '$app/forms'
 	let { data, form } = $props()
-	let content = $state(data.post.content)
+	// $derived (not $state): seeds from the post, holds local edits (bind:value
+	// reassigns it), and re-seeds when navigating to a different post — same-route
+	// component reuse otherwise keeps a stale $state. Svelte 5.25+ reassignable derived.
+	let content = $derived(data.post.content)
 </script>
 
 <svelte:head><title>Edit — Textcaster</title></svelte:head>
