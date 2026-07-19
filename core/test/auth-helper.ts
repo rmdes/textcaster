@@ -30,6 +30,29 @@ export async function anonSession(app: Hono): Promise<string> {
   return setCookie.split(';')[0] // "textcaster.session_token=..."
 }
 
+// Accumulates every Set-Cookie across requests — multiSession mints several
+// cookies (one per held session); the single-cookie helpers above only keep
+// the last one.
+export function cookieJar() {
+  const jar = new Map<string, string>()
+  return {
+    absorb(res: Response) {
+      for (const sc of res.headers.getSetCookie()) {
+        const pair = sc.split(';')[0]
+        const eq = pair.indexOf('=')
+        if (eq < 1) continue
+        const name = pair.slice(0, eq).trim()
+        const value = pair.slice(eq + 1).trim()
+        if (value === '') jar.delete(name)
+        else jar.set(name, value)
+      }
+    },
+    header() {
+      return [...jar.entries()].map(([n, v]) => `${n}=${v}`).join('; ')
+    },
+  }
+}
+
 export async function registeredSession(app: Hono, email: string, repo: SqliteRepository): Promise<string> {
   const res = await app.request('/api/auth/sign-up/email', {
     method: 'POST',

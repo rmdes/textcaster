@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth'
 import type { BetterAuthPlugin } from 'better-auth'
-import { anonymous, magicLink, openAPI } from 'better-auth/plugins'
+import { anonymous, magicLink, multiSession, openAPI } from 'better-auth/plugins'
 import type Database from 'better-sqlite3'
 import type { User } from './domain/types.ts'
 import type { Mailer } from './mail.ts'
@@ -40,6 +40,7 @@ export function createAuth(deps: AuthDeps) {
         await deps.users.setAuthUserId(guest.id, newUser.user.id)
       },
     }),
+    multiSession({ maximumSessions: 4 }),
   ]
   // Dev-only OpenAPI reference (spec 2026-07-19). Routes ride the /api/auth/*
   // mount; the web proxy independently 404s them so this never goes public.
