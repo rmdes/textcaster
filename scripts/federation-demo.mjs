@@ -21,9 +21,9 @@
 import { execFileSync } from 'node:child_process'
 
 const NODES = {
-  main: { loc: 'textcaster.app', origin: 'https://textcaster.app', token: process.env.TOK_MAIN },
-  alice: { loc: 'alice.textcaster.app', origin: 'https://alice.textcaster.app', token: process.env.TOK_ALICE },
-  bob: { loc: 'bob.textcaster.app', origin: 'https://bob.textcaster.app', token: process.env.TOK_BOB },
+  main: { loc: 'rsc.rmdes.be', origin: 'https://rsc.rmdes.be', token: process.env.TOK_MAIN },
+  alice: { loc: 'alice.rmdes.be', origin: 'https://alice.rmdes.be', token: process.env.TOK_ALICE },
+  bob: { loc: 'bob.rmdes.be', origin: 'https://bob.rmdes.be', token: process.env.TOK_BOB },
 }
 const CORE = 'http://127.0.0.1:8787'
 const HOP_TIMEOUT_MS = 180_000
@@ -120,7 +120,7 @@ async function main() {
 
   const n1 = nonce()
   log(`\n[1] main posts the opener  {{${n1}}}`)
-  const p1 = post(NODES.main, `🌐 Federation test — this conversation is born on textcaster.app. Anyone can reply from their own instance. {{${n1}}}`)
+  const p1 = post(NODES.main, `🌐 Federation test — this conversation is born on rsc.rmdes.be. Anyone can reply from their own instance. {{${n1}}}`)
   log(`    → ${p1.url}\n    waiting for it to federate into alice…`)
   const a1 = await waitForFederation(NODES.alice, n1)
   if (!a1) throw new Error('HOP 1 FAILED: opener never reached alice')
@@ -128,7 +128,7 @@ async function main() {
 
   const n2 = nonce()
   log(`\n[2] alice replies  {{${n2}}}`)
-  const p2 = post(NODES.alice, `👋 alice.textcaster.app got it over plain RSS — no shared API, no shared DB — and is replying. {{${n2}}}`, a1.id)
+  const p2 = post(NODES.alice, `👋 alice.rmdes.be got it over plain RSS — no shared API, no shared DB — and is replying. {{${n2}}}`, a1.id)
   log(`    → ${p2.url}\n    waiting for alice's reply to federate into bob…`)
   const b2 = await waitForFederation(NODES.bob, n2)
   if (!b2) throw new Error("HOP 2 FAILED: alice's reply never reached bob")
@@ -136,7 +136,7 @@ async function main() {
 
   const n3 = nonce()
   log(`\n[3] bob replies to alice  {{${n3}}}`)
-  const p3 = post(NODES.bob, `🤝 bob.textcaster.app read alice's reply and is chiming in. Three separate instances, one thread. {{${n3}}}`, b2.id)
+  const p3 = post(NODES.bob, `🤝 bob.rmdes.be read alice's reply and is chiming in. Three separate instances, one thread. {{${n3}}}`, b2.id)
   log(`    → ${p3.url}\n    waiting for bob's reply to federate back into main…`)
   const m3 = await waitForFederation(NODES.main, n3)
   if (!m3) throw new Error("HOP 3 FAILED: bob's reply never reached main")
@@ -144,7 +144,7 @@ async function main() {
 
   const n4 = nonce()
   log(`\n[4] main closes the loop  {{${n4}}}`)
-  const p4 = post(NODES.main, `✅ Back on textcaster.app. This conversation traveled main→alice→bob→main across three instances over nothing but feeds, threading at every hop. It just works. {{${n4}}}`, m3.id)
+  const p4 = post(NODES.main, `✅ Back on rsc.rmdes.be. This conversation traveled main→alice→bob→main across three instances over nothing but feeds, threading at every hop. It just works. {{${n4}}}`, m3.id)
   log(`    → ${p4.url}\n    confirming it federates to BOTH alice and bob…`)
   const a4 = await waitForFederation(NODES.alice, n4)
   const b4 = await waitForFederation(NODES.bob, n4)
