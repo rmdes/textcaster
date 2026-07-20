@@ -1,6 +1,7 @@
 # RSC source-governance vertical roadmap
 
 **Spec:** `docs/superpowers/specs/2026-07-20-rsc-source-governance-moderation-design.md` rev 2
+**Revision:** 2 — folds in the first parallel plan review.
 
 **Cutover strategy:** Build the new model behind `RSC_SOURCE_MODEL_V2=off` by
 default. Do not dual-write. The final vertical performs the one atomic data
@@ -22,15 +23,18 @@ Deliver v2 delivery observations/versions, durable reconciliation jobs,
 publishers/claims, deterministic convergence and selection, resolve-once
 threading, the central visibility projector, ordinary API representations,
 source-based Personal membership, feeds, SSR pages, and semantic SSE payload
-projection. This is the first remote-item reader/writer, so visibility protection
-lands in the same vertical.
+projection. It also delivers the minimal durable `upsert | remove | reset`
+journal, monotonic replay cursor, atomic source-transition reset barrier, and
+send-time policy projection. This is the first remote-item reader/writer, so no
+v2 item is API-, feed-, or SSE-accessible before these protections land.
 
 ## Vertical 3 — Moderation, events, verification, and evidence review
 
-Deliver hidden moderation, placeholders and structural tombstones, source policy
-generations and resumable fan-out, the atomic event journal and reset barrier,
-paused/blocked push behavior, bounded origin verification, purge, conflicts,
-paginated evidence APIs, and administrator review surfaces.
+Deliver hidden moderation, placeholders and structural tombstones, resumable
+per-item policy fan-out, paused/blocked push behavior, bounded origin
+verification, purge, conflicts, paginated evidence APIs, and administrator
+review surfaces. It extends the Vertical 2 journal; it does not introduce the
+first client-invalidation barrier.
 
 ## Vertical 4 — Migration and final cutover
 
