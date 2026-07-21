@@ -1,7 +1,7 @@
 # RSC source-governance vertical roadmap
 
 **Spec:** `docs/superpowers/specs/2026-07-20-rsc-source-governance-moderation-design.md` rev 2
-**Revision:** 2 — folds in the first parallel plan review.
+**Revision:** 3 — folds in the second parallel plan review.
 
 **Cutover strategy:** Build the new model behind `RSC_SOURCE_MODEL_V2=off` by
 default. Do not dual-write. The final vertical performs the one atomic data
@@ -15,7 +15,9 @@ Plan: `2026-07-20-rsc-source-control-plane.md`
 
 Deliver the inactive v2 source registry end to end: schema, URL resolution,
 source subscriptions, operation/governance/federation axes, audit/idempotency,
-admin APIs, and no-JS web management. No remote items use it yet.
+admin APIs, and no-JS web management. Core exposes the capability state so web
+keeps every legacy surface operational while v2 is off. No remote items use it
+yet.
 
 ## Vertical 2 — Logical items and ordinary reads
 
