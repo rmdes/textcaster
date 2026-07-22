@@ -150,3 +150,92 @@ Fold as **spec rev 1** before reviewing the V2 plan (currently mid-edit —
 it will have inherited P1/P4–P7's task structure and C1's web branch).
 Cite `core/src/api/app.ts:65` for `jsonWrite` in the rev text. The review
 loop re-reviews the folded rev and then the revised plan.
+
+---
+
+# APPENDIX (2026-07-23): V2 plan drift map vs spec rev 1
+
+For the plan author resuming the parked working-tree edit (+338/−53,
+last touched 2026-07-22 16:58 — BEFORE the rev-1 fold at 9892757). Plan line
+numbers are working-tree lines at that state. Verdict: **roughly two-thirds
+of the edit survives intact** — the Revision-2 spine (DatabaseContext/ReadTx/
+WriteTx boundary, task reordering, signature block, Appendices B/C, most of
+A/D) is orthogonal to the fold. The drift is surgical: expect a focused
+~120–140-line revision, no task deleted, no task added.
+
+## Do first — stale pointer
+- Line 27: "Governing spec: … rev 4" → cite "rev 4 (review rev 1 folded,
+  commit 9892757)". Same at lines 19–21 and Task 2 lines 200/211 ("exact Rev
+  4 types" must mean the FOLDED types: boolean personal, 3 levels,
+  reset-generation).
+
+## Per-finding drift
+- **P1 (fan-out → count-on-frame):** Task 10 lines 360–363 (parent/root
+  upserts + reset-fallback) DEAD → one journal effect per reply mutation;
+  Task 12 line 400 reworked to the `replyCounts` overlay; ADD count-on-frame
+  authority, apply-twice idempotence, query-time SSR count, and
+  adoption-via-reset tests (none exist in the plan).
+- **P5 (epoch/ring/floor → seq + reset-generation):** line 143
+  JournalMetadata drops epoch/replayFloorSeq → `{highWaterSeq,
+  resetGeneration}`; Appendix A line 438 columns likewise; line 224
+  `pruneJournal` REMOVED (no pruning); Task 3 line 227 ring/floor/epoch
+  cases DEAD → unknown/stale/older-generation cursor ⇒ single `reset` +
+  SSR refetch; `'barrier'` change-mask (144/439) survives as
+  reset-without-generation-bump.
+- **P4 (claims):** lines 124–130 drop fence/leaseUntil AND the `joined`
+  variant; Appendix A line 454 `acquisition_claims_v2` DEAD (per-source
+  in-process boolean; crash clears, startup clean); Task 6 line 300 keeps
+  only the commit-time reason-recheck case; ADD in-flight-boolean test.
+- **P6 (worker):** lines 131/134 drop fence/leaseUntil; Appendix A line 459
+  drops both columns (keep attempts/next_attempt_at/status; index at 471
+  already matches the drain order); Task 7 line 316 drops 16-row window +
+  lost-fence → serial drain, startup drain, backoff formula, commit-time
+  policy-generation check. Also `orphan_work_v2` line 451 fence/lease DEAD.
+- **P7 (scheduler):** file-map line 55 + Task 6 title line 274 + line 300
+  four-slot/completion/shared-backoff DEAD → one global serial loop in
+  sourceId order, skip-if-recent on durable `lastPollAt` (RENAME Appendix A
+  line 455 `next_poll_at` → `last_poll_at`, matching AdminSourceAcquisition-
+  Summary.health), consecutive-failure counter retained, backoff deferred
+  (`ponytail: single-lane poll + skip-if-recent`).
+- **P2:** Task 7 line 317 "four evidence levels" → three (V3 prepends the
+  verified rung).
+- **P3:** inert-push wording (264/271) survives; ADD one isolation test that
+  V2 persists NO WebSub/rssCloud claim and exposes NO capability admin field.
+- **P8:** Task 9 line 348 + the Task-2 DTO copy must use boolean
+  `classification.personal`/`.federated` (no per-item source-id arrays;
+  `ProjectionViewer.activeSourceIds` at line 140 is viewer input and stays).
+- **C1 (the HIGH):** Task 12 line 399 + Appendix D lines 564–567 treat ALL
+  capability failure as fail-closed — the reopened V1 OFF-state regression.
+  SPLIT: fetch failure (unreachable/non-200/throw) ⇒ legacy for that
+  request, retry next, memoize success only; successful-v2 + malformed
+  envelope ⇒ fail closed. Two tests, both currently missing.
+- **C2:** Task 6 refresh route (286–298) must state `jsonWrite` composition
+  (app.ts:65) + route test.
+- **C3:** pin fingerprint = `[command, sourceId, actor]` so Appendix D line
+  552's 409 test is constructible.
+- **C4:** Appendix D lines 547–555 use an `Idempotency-Key` HEADER — DEAD.
+  Command ID travels as body `{"commandId":"…"}` (V1 ledger convention);
+  rewrite both requests + the mismatch case varies command/source/actor.
+- **C5:** ADD the explicit obligation: widening V1's capability shape
+  requires updating V1's `toEqual({sourceModelV2:true})` test and the V1 web
+  client type (Task 12 stages the right files; no step names the edit).
+- **V4 WP4 (new obligation):** ADD one nullable column/blob on
+  `acquisition_runs_v2` (Appendix A line 452) for the parse-time
+  push-capability evidence — written inert by V2, validated by V3.
+- **V4 §10.2:** ADD the `policy_generation` column (source-scoped) to the
+  schema inventory — Appendix B (484–485) already says transitions advance
+  a generation, but no column exists in the plan.
+- **V4 §10.6:** forward-compat note — `updatedAtProvenance` widens with
+  `legacy_unknown` at cutover; Task-9 DTO tests must expect widening.
+
+## DEAD vs MISSING ledger (compressed)
+DEAD: epoch/replayFloorSeq/pruneJournal + ring tests · all fence/leaseUntil
+fields + columns (claims, jobs, orphan_work) + `joined` variant + higher-
+fence/manual-join/lost-fence/16-row cases · four-slot scheduler machinery ·
+parent/root fan-out + reset-fallback · "four evidence levels" ·
+Idempotency-Key header test.
+MISSING: reset-generation recovery tests · count-on-frame + query-time-count
++ idempotent-replay tests · in-flight boolean + commit-time recheck · serial
+drain + startup drain · lastPollAt rename + skip-if-recent · C1 carve (two
+tests) · jsonWrite pin · fingerprint pin · C5 V1-toEqual edit ·
+push-capability column (WP4) · policy_generation column (§10.2).
