@@ -1,10 +1,12 @@
 # RSC logical items and ordinary reads — Vertical 2 design
 
 **Date:** 2026-07-22
-**Status:** Ready for repository review
-**Revision:** 1
+**Status:** Revision 2 ready for final whole-document review
+**Revision:** 2 — aligns logical-v2 river membership, reply counts, and durable
+reply invalidation with the root-only timeline design.
 **Foundation:** `2026-07-20-rsc-source-governance-moderation-design.md` rev 3
 **Roadmap:** `2026-07-20-rsc-source-governance-vertical-roadmap.md` rev 4
+**Timeline presentation:** `2026-07-22-root-only-timelines-design.md`
 **Scope:** Vertical 2 only. No implementation planning is authorized by this document.
 
 ## Purpose and boundary
@@ -14,6 +16,11 @@ model introduced by Vertical 1. It adds bounded polling acquisition, durable
 delivery evidence and reconciliation, publishers and claims, logical items,
 resolve-once threading, deterministic ordinary projection, unified feeds and
 pages, and a durable replay journal.
+
+The root-only timeline design is an explicit presentation dependency. Reply
+storage, identity, ancestry, feeds, and conversations remain first-class;
+river-style collections present conversation roots and unresolved replies,
+while author activity views continue to include replies.
 
 The work remains behind startup-immutable `RSC_SOURCE_MODEL_V2=off` by default.
 There is no dual-write. When disabled, v1 remains unchanged. When enabled,
@@ -453,8 +460,22 @@ are placed by immutable order rather than blindly prepended.
 
 Ordinary collection DTOs include at least stable logical ID, origin, selected
 author, semantic presentation fields, `publishedAt`, update metadata,
-`threadRootId: string | null`, `replyCount`, and bounded classification fields.
-`replyCount` counts ordinary-visible direct children only.
+`threadRootId: string | null`, distinct reply counts, and bounded
+classification fields.
+
+```ts
+directReplyCount: number;
+conversationReplyCount: number;
+```
+
+`directReplyCount` counts ordinary-visible direct children and supports nested
+conversation controls. `conversationReplyCount` counts all ordinary-visible
+resolved descendants in the conversation and supports the root-level affordance
+whose expansion reveals that conversation. Neither field changes meaning by
+endpoint. Quarantined, blocked, deleted, unsupported, or otherwise unavailable
+items do not count merely because retained evidence exists. Neutral connective
+placeholders are structure, not replies, and do not count independently of
+their surviving ordinary-visible descendants.
 
 ```ts
 type SelectedAuthor =
@@ -531,6 +552,24 @@ Federated requires at least one eligible delivery from a currently approved
 federation source. The selected display may come from another source. Local
 items never enter Federated through remote echoes, and federation approval
 alone never creates Personal membership.
+
+Public, Local, Personal, Federated, and the following-management river are
+conversation-entry views. They include:
+
+- true roots whose `parentResolutionState` is `none`; and
+- unresolved replies whose state is `missing` or `ambiguous`.
+
+They exclude replies whose state is `resolved`. This predicate is applied with
+visibility and lens membership before ordering, cursor evaluation, and
+`LIMIT`; clients never filter a limited page after retrieval. An unresolved
+reply remains discoverable with its ordinary-safe reply context because an
+unavailable or ambiguous parent must not make otherwise valid content vanish.
+
+The local-author and publisher lenses remain activity-oriented and include
+ordinary-visible resolved replies. They answer what that author or publisher
+posted rather than which conversation roots belong to a river. The lens
+descriptor, not an endpoint-dependent count meaning, determines this
+collection behavior.
 
 ### 3.6 Publisher pages and labels
 
@@ -767,8 +806,10 @@ through the existing shared sanitizer path.
 All public feeds use the central projector and exclude unsupported evidence.
 Existing URLs remain stable:
 
-- the all-users firehose uses `origin=local`;
-- local-account feeds use the local-author lens;
+- the all-users firehose uses `origin=local` without the river root-only
+  predicate and continues transporting local replies;
+- local-account feeds use the activity-oriented local-author lens and continue
+  transporting replies;
 - `/post/:id/comments.xml` uses the bounded thread projector for policy and
   safety but serializes ordinary-visible direct replies only;
 - nested replies continue through their own comments-feed links;
@@ -847,7 +888,37 @@ unavailable becomes remove, and unsafe reconstruction becomes reset. Stored
 remove remains remove. Placeholders are never streamed as timeline entries;
 conversation clients refetch their thread.
 
-### 5.5 Capability and cutover
+### 5.5 Durable reply-count invalidation
+
+Logical-v2 does not adopt v1's transient `rootReplyCount` SSE enrichment. Reply
+counts are ordinary projection fields derived from current logical ancestry and
+visibility. Their live correctness comes from durable journal effects.
+
+A transaction that changes ordinary-visible reply cardinality appends the
+reply's own required journal effect and, when the affected conversation root is
+uniquely and safely derived, an `upsert` for that root. This includes:
+
+- creation or visibility gain of a resolved reply;
+- loss or restoration of ordinary reply visibility;
+- terminal local reply deletion;
+- a `missing -> resolved` orphan adoption, which also removes the reply from
+  root-only rivers;
+- any ancestry correction or later moderation transition that changes the
+  conversation represented by the root.
+
+The root upsert is a durable journal row committed atomically with the reply or
+ancestry mutation. Send-time projection supplies the current authoritative
+`directReplyCount` and `conversationReplyCount`; clients never increment a
+count optimistically. Replay and duplicate delivery are therefore idempotent.
+
+If a bounded mutation cannot safely identify every affected root, or changes
+reply visibility/cardinality across an unbounded set, it commits one reset
+barrier instead of transient or partial count metadata. Existing source-policy,
+account-deletion, and publisher-wide reset rules may subsume this invalidation.
+A reply edit that changes no ancestry or ordinary visibility emits no root
+count upsert.
+
+### 5.6 Capability and cutover
 
 ```ts
 type Capabilities =
@@ -876,13 +947,19 @@ server renderer and sanitizer and passes remove/reset unchanged. Current policy
 is applied in Core before streaming; client lens filtering is never the
 visibility boundary.
 
-### 5.6 Client reconciliation
+### 5.7 Client reconciliation
 
 Upsert reevaluates the active lens, removes an item that no longer belongs, or
 inserts/replaces it at immutable timeline order. Remove deletes from timeline
 and river surfaces; conversation views refetch to obtain pruning or placeholder
 state. Reset discards event-derived assumptions, refetches SSR, and reconnects
 from its snapshot cursor.
+
+For river lenses, a resolved-reply upsert never inserts that reply as a card.
+The durable root upsert replaces the visible root's authoritative conversation
+count when that root is loaded. Author and publisher activity lenses may insert
+the reply itself according to immutable timeline order. An off-page root is not
+materialized merely because one of its replies arrived.
 
 Administrative retained content requires both authenticated administrator and
 an explicitly administrative route. Ordinary routes never reveal hidden or
@@ -1215,6 +1292,13 @@ The implementation plan must preserve the detailed contracts above and include:
   normalization/bound, and exact reset tests;
 - Public, Local, Personal, local-author, publisher, and Federated semantics,
   including any eligible approved support and local-echo exclusion;
+- root/unresolved-only filtering before pagination for Public, Local, Personal,
+  Federated, and following management, while author and publisher activity
+  lenses retain replies;
+- stable `directReplyCount` and `conversationReplyCount` semantics across
+  endpoints, with ordinary visibility applied before counting;
+- atomic durable root upserts for bounded reply-count changes and reset barriers
+  for unsafe or unbounded invalidation, with no transient v1 count metadata;
 - presentation watermark, rollback, arrival fallback, job-order, history, and
   direct-comments-feed tests;
 - journal atomicity, epoch/floor/pruning, opaque cursor, reset-close,
