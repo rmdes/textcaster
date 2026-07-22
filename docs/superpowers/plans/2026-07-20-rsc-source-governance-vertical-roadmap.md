@@ -51,3 +51,8 @@ final cutover, not an early schema task.
 Each detailed plan receives the repository's parallel plan review before the
 next plan locks signatures that depend on it. Review order is 1 → 2 → 3 → 4.
 No implementation begins until its plan review is folded in.
+
+Implementation of every vertical remains deferred until all four vertical
+plans have passed repository review and a final cross-vertical contract review
+has been completed. Execution then proceeds in order: Vertical 1, Vertical 2,
+Vertical 3, and Vertical 4.
