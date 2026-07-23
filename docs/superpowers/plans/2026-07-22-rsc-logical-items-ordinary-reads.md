@@ -16,7 +16,25 @@ through a one-to-one bridge.
 **Tech Stack:** Node 22 native TypeScript, Hono, better-sqlite3/Kysely,
 feedsmith, Vitest, SvelteKit 2, Svelte 5.
 
-**Revision:** 4 — folds the dual plan review (correctness QC1-4 + ponytail
+**Revision:** 5 — folds the V3 plan review's cross-plan items
+(`docs/superpowers/reviews/2026-07-22-v3-moderation-spec-review.md`, section
+"PLAN REVIEW (2026-07-23): V3 plan draft dual pass → V3 rev 2 + V2 rev 5
+instructions"). The three lockstep items are applied directly here — not left
+as pending proposals — plus one export pin: (1) RC1 — the V1-rev-5-deferred
+`source_aliases_v2` table lands in Appendix A under its pinned name, with the
+redirect-identity alias writer in Task 4 (the task that tests permanent-chain
+aliases; `CommitAcquisitionInput` gains `aliases`); (2) RC3 — 
+`reconciliation_jobs_v2` is created verification-ready from day one using the
+V3 plan's Appendix A form (V3 lockstep amendment 1, applied), and every job
+INSERT is pinned to an explicit column list — never positional VALUES — so
+V3's wider usage needs no V2 code change; (3) RC4 — V3 lockstep amendment 2
+applied broadened: interim last-subscription cleanup retains the source row
+whenever ANY `ON DELETE RESTRICT` child references it, deletes what it can,
+and reports what it retained (Task 9); (4) the `jsonWrite` export pin — Task
+5 exports the guard from `core/src/api/app.ts` so V3+ composes it by import.
+All are additive contract completions; Status stays READY.
+
+Revision 4 folded the dual plan review (correctness QC1-4 + ponytail
 VP1-8; adjudications in
 `docs/superpowers/reviews/2026-07-22-v2-logical-items-spec-review.md`,
 section "PLAN REVIEW (2026-07-23)"). Applied: QC1 (the core-side capability
@@ -56,7 +74,7 @@ C1 capability-failure carve, the C2 `jsonWrite` pin, the C3 request-fingerprint
 pin, the C5 V1 capability-test supersession, the WP4 inert push-capability
 column, and the source-scoped `policy_generation` column.
 
-**Status:** Plan review folded (rev 4); READY for implementation — execution remains gated on the roadmap's all-four-plans + final cross-vertical review gate.
+**Status:** Plan review folded (rev 4) + V3 lockstep fold (rev 5); READY for implementation — execution remains gated on the roadmap's all-four-plans + final cross-vertical review gate.
 
 ## Global Constraints
 
@@ -164,7 +182,10 @@ export interface ClaimAcquisitionInput {sourceId:string;reason:AcquisitionReason
 export type ClaimAcquisitionResult =
   | {kind:'claimed';runId:string;source:RemoteSource}
   | {kind:'unavailable';reason:'unknown'|'paused'|'blocked'|'unscheduled'}
-export interface CommitAcquisitionInput {runId:string;sourceId:string;committedAt:string;effectiveUrl:string|null;validators:ConditionalValidators|null;redirects:RedirectObservation[];observations:NewObservationVersion[];findings:AcquisitionFinding[];counters:AdminAcquisitionCounters;outcome:AdminFetchProjection['outcome'];pushCapabilityJson:string|null}
+export interface CommitAcquisitionInput {runId:string;sourceId:string;committedAt:string;effectiveUrl:string|null;validators:ConditionalValidators|null;redirects:RedirectObservation[];aliases:string[];observations:NewObservationVersion[];findings:AcquisitionFinding[];counters:AdminAcquisitionCounters;outcome:AdminFetchProjection['outcome'];pushCapabilityJson:string|null}
+// rev 5 (RC1): `aliases` carries the proven permanent-chain targets (spec
+// §1.6) the result transaction upserts into source_aliases_v2 (spec §7.2:
+// "atomically commits aliases, redirect evidence, validators, ...").
 export interface FailAcquisitionInput {runId:string;sourceId:string;now:string;outcome:'operational_failure'|'cancelled'|'superseded'|'policy_rejected';category:AdminFetchProjection['failureCategory'];diagnostic:string|null}
 export interface ReconciliationClaim {jobId:string;runId:string;observationVersionId:string}
 export interface ReconcileClaimInput {claim:ReconciliationClaim;now:string}
@@ -258,7 +279,7 @@ reconcile or mark v2 active.
 - [ ] **Step 3:** Add `logical-schema.test.ts` asserting the exact tables listed
   in Appendix A and activation `{schemaVersion:1,state:'never_activated',
   lastActivatedAt:null,lastReconciledAt:null}` with no journal row.
-- [ ] **Step 4:** Add the exact folded rev 4 types (boolean
+- [ ] **Step 4:** Add the exact folded rev 5 types (boolean
   `classification.personal`/`.federated`, three evidence levels,
   `resetGeneration` journal metadata) and schema migration; run
   `npm test -w core -- logical-database logical-schema && npm run typecheck -w core`;
@@ -304,7 +325,10 @@ modify `core/src/domain/ingest.ts`, `core/src/domain/push-guard.ts`,
 
 **Interfaces:** Produces `acquireSource(sourceId, reason, signal)`, the
 per-source in-process in-flight flag, adapter candidate records, canonical
-fingerprint v1, and atomic run/observation/job commit.
+fingerprint v1, and atomic run/observation/job/alias commit. Rev 5 (RC1):
+this task is the redirect-identity `source_aliases_v2` writer — V1 rev 5's
+fold notes assign the first alias writer to V2's redirect handling — with
+proven permanent-chain targets travelling as `CommitAcquisitionInput.aliases`.
 
 - [ ] **Step 1:** Add red fixture tests for the total 10-second deadline, streaming 5 MiB decoded cap, five redirects, loop/hop SSRF/governance/ownership checks, permanent-chain aliases, effective-URL validators, 1,000 candidates, 1 MiB item evidence, 32 enclosures, operational string limits, redacted digest evidence, and inert push discovery.
 - [ ] **Step 1a:** In adapter table tests assert RSS and Atom use document
@@ -315,9 +339,17 @@ fingerprint v1, and atomic run/observation/job commit.
   records only the inert parse-time push-capability evidence on its run row
   (nullable `push_capability_json`, validated by Vertical 3), persists no
   WebSub/rssCloud subscription or claim, and calls no push endpoint.
+- [ ] **Step 1c:** Add red alias-writer tests (rev 5, RC1; spec §1.6): an
+  uninterrupted 301/308 chain from the canonical URL or an already-owned
+  alias upserts one `source_aliases_v2` row per qualifying target inside the
+  result transaction, and only after the target's safe fetch parses; a
+  302/303/307 anywhere breaks the proof for later hops (no alias row); an
+  ownership collision commits run outcome, redirect evidence, and conflict
+  but NO alias, observation, job, or validator rows; redirecting to the same
+  source's existing alias writes nothing new.
 - [ ] **Step 2:** Add red identity tests for exact opaque IDs, normalized permalinks, fallback keys, complete first-arrival tuple, unchanged seen metadata, same-key multi-version jobs, and fingerprint-collision skip.
 - [ ] **Step 3:** Run `npm test -w core -- logical-acquisition logical-bounds`; expect FAIL.
-- [ ] **Step 4:** Implement streaming fetch/parsers and the two transactions (command association commits before the acquisition result, which rechecks policy and scheduling reason). Never call push endpoints and never partially parse an oversized body.
+- [ ] **Step 4:** Implement streaming fetch/parsers and the two transactions (command association commits before the acquisition result, which rechecks policy and scheduling reason). Never call push endpoints and never partially parse an oversized body. Rev 5 (RC3): every `reconciliation_jobs_v2` INSERT names its columns explicitly — never positional `VALUES` — so the verification-ready table shape (Appendix A) needs no V2 code change when Vertical 3 widens usage.
 - [ ] **Step 5:** Run and commit exactly as Task 4's Appendix C row.
 
 ### Task 5: Serial poll loop, operational administration, and capability supersession
@@ -347,7 +379,9 @@ The refresh route composes the house `jsonWrite` bodyLimit guard positionally
 like every other authed JSON write. The command ID travels only as the
 `commandId` JSON body field — the Vertical 1 command-ledger convention; there
 is no idempotency header — and the request fingerprint inputs are exactly
-`[command, sourceId, actor]`.
+`[command, sourceId, actor]`. Rev 5 pin (V3 review): this task turns
+`jsonWrite` from a module-local const into an EXPORT of `core/src/api/app.ts`
+so Vertical 3+ composes the same guard by import instead of redefining it.
 
 They return `AdminRefreshResult`, `AdminAcquisitionRun`, or
 `AdminPage<AdminRunProjection|AdminReconciliationJobSummary>`.
@@ -429,7 +463,7 @@ source command module, `core/src/domain/service.ts`, `core/src/logical/store.ts`
 **Interfaces:** Produces exact generation/reset rules and the single
 per-reply journal effect (no fan-out to other items).
 
-- [ ] **Step 1:** Add red tests for governance/federation/mode generation+reset, pause/resume no reset, subscription/follow/profile reset rules, no-op/replay, publisher label reset, exactly one journal effect per bounded reply mutation (the reply's own upsert/remove — no parent upsert, no root upsert, no reset fallback), content-edit no count effect, and reset-only adoption/account/source-wide changes.
+- [ ] **Step 1:** Add red tests for governance/federation/mode generation+reset, pause/resume no reset, subscription/follow/profile reset rules, no-op/replay, publisher label reset, exactly one journal effect per bounded reply mutation (the reply's own upsert/remove — no parent upsert, no root upsert, no reset fallback), content-edit no count effect, and reset-only adoption/account/source-wide changes. Rev 5 (RC4 — V3 plan lockstep amendment 2, applied broadened): one test case that removing a source's last subscription retains the source row (`sourceRemoved:false`) whenever ANY `ON DELETE RESTRICT` child still references it — `deliveries_v2`, `source_health_v2`, `source_validators_v2`, `acquisition_runs_v2`, `publisher_names_v2`, `publisher_claims_v2`, … — while cleanup deletes what it can and reports what it retained; V3's Task 7 replaces this interim rule with evidence-aware cleanup.
 - [ ] **Step 2:** Run `npm test -w core -- logical-policy-events`; expect FAIL.
 - [ ] **Step 3:** Insert journal append calls inside the existing Vertical 1/local transactions; never append after commit or perform fan-out.
 - [ ] **Step 4:** Run and commit exactly as Task 9's Appendix C row.
@@ -528,9 +562,10 @@ acquisition_runs_v2(id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES remot
 acquisition_commands_v2(actor_id TEXT NOT NULL,command_id TEXT NOT NULL,request_fingerprint TEXT NOT NULL,run_id TEXT REFERENCES acquisition_runs_v2(id),refusal_json TEXT,created_at TEXT NOT NULL,PRIMARY KEY(actor_id,command_id))
 source_health_v2(source_id TEXT PRIMARY KEY REFERENCES remote_sources_v2(id),last_poll_at TEXT,last_success_at TEXT,last_failure_at TEXT,consecutive_failures INTEGER NOT NULL)
 source_validators_v2(source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),effective_url TEXT NOT NULL,etag TEXT,last_modified TEXT,PRIMARY KEY(source_id,effective_url))
+source_aliases_v2(url TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES remote_sources_v2(id) ON DELETE CASCADE,created_at TEXT NOT NULL)
 redirect_observations_v2(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),ordinal INTEGER NOT NULL,status INTEGER,from_evidence TEXT NOT NULL,to_evidence TEXT NOT NULL,permanent_proof INTEGER NOT NULL CHECK(permanent_proof IN(0,1)))
 acquisition_findings_v2(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),kind TEXT NOT NULL,evidence_json TEXT NOT NULL,created_at TEXT NOT NULL)
-reconciliation_jobs_v2(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),observation_version_id TEXT NOT NULL UNIQUE REFERENCES observation_versions_v2(id),status TEXT NOT NULL CHECK(status IN('pending','processing','retrying','reconciled','conflicted','failed')),attempts INTEGER NOT NULL,next_attempt_at TEXT NOT NULL,failure_category TEXT,diagnostic TEXT,created_at TEXT NOT NULL)
+reconciliation_jobs_v2(id TEXT PRIMARY KEY,kind TEXT NOT NULL DEFAULT 'observation' CHECK(kind IN('observation','verification')),run_id TEXT REFERENCES acquisition_runs_v2(id),observation_version_id TEXT UNIQUE REFERENCES observation_versions_v2(id),verification_batch_key TEXT,status TEXT NOT NULL CHECK(status IN('pending','processing','retrying','reconciled','conflicted','failed')),attempts INTEGER NOT NULL,next_attempt_at TEXT NOT NULL,failure_category TEXT,diagnostic TEXT,created_at TEXT NOT NULL,CHECK((kind='observation') = (observation_version_id IS NOT NULL AND run_id IS NOT NULL)),CHECK((kind='verification') = (verification_batch_key IS NOT NULL)))
 ```
 
 Two additive obligations from the cutover spec ride the same migration:
@@ -545,6 +580,23 @@ rechecks it at commit time. Note (VP1, refuted — keep the column):
 hub/cloud discovery is channel data that per-item evidence cannot reproduce,
 so capture-at-parse into `acquisition_runs_v2.push_capability_json` is forced
 (V3 review decision #5).
+
+Two rev 5 (V3 plan review) completions also ride the same migration.
+`source_aliases_v2` reinstates the V1-rev-5-deferred alias table under its
+pinned name — V1's fold notes assign the first writer to this vertical's
+redirect-identity handling (spec §1.6; Task 4 Step 1c). Its explicit
+`ON DELETE CASCADE` (the one deviation from the RESTRICT default) is
+load-bearing: V3's purge copies every alias into `tombstone_aliases_v2`
+before the source row's deletion cascades the originals away (V3 spec §5).
+And `reconciliation_jobs_v2` is created verification-ready from day one —
+the DDL above is the V3 plan's lockstep amendment 1 form, whose origin is
+`docs/superpowers/plans/2026-07-22-rsc-moderation-events-verification.md`
+(applied here as rev 5): nullable `run_id`/`observation_version_id`, `kind`
+defaulting `'observation'`, nullable `verification_batch_key`, and the two
+kind CHECKs. V2 writes only `kind='observation'` rows, and every job INSERT
+names its columns explicitly (never positional `VALUES`), so Vertical 3
+widens usage with no V2 code change. SQLite UNIQUE admits multiple NULL
+`observation_version_id` rows.
 
 Required explicit indexes are only:
 

@@ -21,53 +21,82 @@ schema, or test in this plan).
 **Tech Stack:** Node 22 native TypeScript, Hono, better-sqlite3/Kysely,
 feedsmith, Vitest, SvelteKit 2, Svelte 5.
 
-**Revision:** 1 — initial draft against spec rev 1.
+**Revision:** 2 — folds the plan review
+(`docs/superpowers/reviews/2026-07-22-v3-moderation-spec-review.md`, section
+"PLAN REVIEW (2026-07-23): V3 plan draft dual pass → V3 rev 2 + V2 rev 5
+instructions"). All five authoring risky calls were upheld by both passes.
+Applied: RC1 consequence — the lockstep amendments are now THREE and are
+APPLIED in V2 plan rev 5 (not proposals): `source_aliases_v2` + its Task 4
+redirect-identity writer joined the verification-ready `reconciliation_jobs_v2`
+DDL and the broadened interim cleanup rule; purge's alias copy and tombstone
+resolution bind to the pinned name and the "cross-vertical review must pin
+the name" hedge is gone. RC2 — Task 6's purge inventory enumerates EVERY
+`ON DELETE RESTRICT` child (including `presentation_entries_v2`,
+`publisher_names_v2`, `publisher_feed_aliases_v2`), states the FK-graph
+inventory rule, and adds a `PRAGMA foreign_key_list` walking test to its red
+suite. RC5 — `AdminItemDetail.verification` is a per-check array
+`{publisherFeedUrl, state, attempts, lastCheckedAt}[]`; Tasks 8/9 updated.
+TP1 — the no-amendment re-audit is one sentence. TP2 — ONE parametrized §6
+journal-effects table test in a shared suite seeded in Task 2; Tasks 3/5/6/7
+append only their own rows; per-task suites keep only their own new surfaces
+and repeat no journal counts. TP3 — the fan-out batching rationale is stated
+(write-lock hold across a full-source recompute, not size). TP4 — Task 10
+asserts end-to-end wiring once per mandatory scenario. TP5 — the cheap
+`sqlite_master` no-rebuild assertion stays.
 
-**Status:** DRAFT pending plan review; execution remains gated on the
-roadmap's all-four-plans + final cross-vertical review gate.
+Revision 1 was the initial draft against spec rev 1.
+
+**Status:** Plan review folded (rev 2); READY — execution remains gated on
+the roadmap's all-four-plans + final cross-vertical review gate.
 
 ## Global Constraints
 
 - Governing spec: `docs/superpowers/specs/2026-07-22-rsc-moderation-events-verification-design.md` rev 1.
-- Prerequisites: V1 plan rev 5 and V2 plan rev 4 implemented and reviewed. Refuse execution if the two **lockstep amendments to the V2 plan** below did not land in V2's execution.
+- Prerequisites: V1 plan rev 5 and V2 plan rev 5 implemented and reviewed. Refuse execution if the three **lockstep amendments to the V2 plan** below (applied in V2 plan rev 5) did not land in V2's execution.
 - `RSC_SOURCE_MODEL_V2` stays startup-immutable, default off. With v2 off no V3 route, worker, or write path is active and legacy behavior — including legacy push — is byte-identical.
 - **Push is out of scope.** No WebSub/rssCloud code, schema, or test is touched beyond what V2 already shipped inert. `SourceSummary.push` stays deferred to V4.
 - One SQLite `BEGIN IMMEDIATE` write transaction per mutation and its audit, ledger, hint, and journal effects, via the V2 `DatabaseContext.write()` idiom. Notifications after commit, sequence hints only.
-- Reuse V2's exported helpers by exact name: `createDatabaseContext`, `createLogicalStore`, `LogicalReadTx`, `appendJournal`, `encodeCursor`/`decodeCursor` (+ the shared invalid-cursor test table), `AdminPage<T>`, and the house `jsonWrite` guard (`core/src/api/app.ts:65`, `MAX_JSON_BYTES` at `:63`). Command IDs travel only as the `commandId` JSON body field.
+- Reuse V2's exported helpers by exact name: `createDatabaseContext`, `createLogicalStore`, `LogicalReadTx`, `appendJournal`, `encodeCursor`/`decodeCursor` (+ the shared invalid-cursor test table), `AdminPage<T>`, and the house `jsonWrite` guard — exported from `core/src/api/app.ts` under V2 rev 5's export pin (`MAX_JSON_BYTES` at `:63`); compose it by import, never redefine it. Command IDs travel only as the `commandId` JSON body field.
 - Core stores and returns semantic content; Web alone renders HTML through `web/src/lib/server/render.ts`. Never add another sanitizer path.
 - No TypeScript parameter properties in `core/src`; no new dependency.
 - Core route tasks must invoke `.claude/skills/hono/SKILL.md`. Web tasks must invoke the repository UI/Svelte skills and follow `design-system/rsc/MASTER.md`.
 - Stage explicit paths only. Every commit ends with `developed with the help of AI tools`.
 - Test commands follow `docs/superpowers/documentation/TESTING.md`: when the dev stack is running, run in-container (`docker exec rsc-core sh -c "cd /app && npm test -w core -- <filter>"`, web with `env -u CORE_API_URL`); otherwise host commands as written below.
 
-### Lockstep amendments to the V2 plan (pre-execution)
+### Lockstep amendments to the V2 plan (APPLIED in V2 rev 5)
 
-Both follow the established amendment mechanism (precedent: the V4 §10
-CHECK-vocabulary pin amending V1's plan). Fold them into the V2 plan at the
-cross-vertical review; this plan refuses execution without them.
+All three follow the established amendment mechanism (precedent: the V4 §10
+CHECK-vocabulary pin amending V1's plan) and are APPLIED in V2 plan rev 5 —
+not pending proposals. This plan refuses execution if V2's executed revision
+predates rev 5.
 
 1. **`reconciliation_jobs_v2` is created verification-ready.** Spec §4.1/§9:
    verification is a job *kind* on V2's reconciliation-job rows, and SQLite
-   cannot relax `NOT NULL` after creation. V2's Appendix A DDL must create the
-   table as pinned in this plan's Appendix A (nullable `run_id` /
-   `observation_version_id`, `kind` + `verification_batch_key` columns, the
-   two kind CHECKs). V2's code writes only `kind='observation'` rows and needs
-   no behavior change.
-2. **Interim last-subscription cleanup retains sources referenced by v2
-   items** (spec, Open dependency 3): until V3's Task 7 lands, unsubscribing
-   the last subscriber of a source whose deliveries support any logical item
-   must retain the source (`sourceRemoved:false`). V2's plan currently defines
-   no such rule; V1's Task 5 promised V2 would. One sentence + one test case
-   in V2's cleanup coverage.
+   cannot relax `NOT NULL` after creation. V2 rev 5's Appendix A creates the
+   table with nullable `run_id`/`observation_version_id`, `kind` +
+   `verification_batch_key` columns, and the two kind CHECKs — that DDL
+   (origin: this plan's review cycle) is the one binding definition; this
+   plan's Appendix A references it without redefining. V2's code writes only
+   `kind='observation'` rows, via explicit column-list INSERTs, and needs no
+   behavior change.
+2. **Interim last-subscription cleanup retains referenced sources** (spec,
+   Open dependency 3): until V3's Task 7 lands, V2 rev 5's Task 9 carries the
+   rule in its broadened FK-graph form — removing the last subscriber retains
+   the source row (`sourceRemoved:false`) whenever ANY `ON DELETE RESTRICT`
+   child references it (deliveries, health, validators, runs, publisher
+   names/claims, …); cleanup deletes what it can and reports what it
+   retained. V1's Task 5 promised V2 would define this.
+3. **`source_aliases_v2` exists with a V2 writer** (review RC1): V2 rev 5's
+   Appendix A reinstates the V1-rev-5-deferred table under the pinned name
+   `source_aliases_v2` and its Task 4 adds the redirect-identity alias writer
+   (permanent-chain proofs). Task 6 below binds purge's alias copy — and
+   Task 7's resolution of the copied rows — to that name directly.
 
-Verified present in V2's plan (no amendment needed): `remote_sources_v2.policy_generation`
-(V2 Appendix A `ALTER TABLE` — spec Open dependency 1 resolved) and the wide
-nine-value `source_audit_v2` CHECK (V1 plan rev 5 Task 1 — spec Open
-dependency 2; the cross-vertical review re-verifies it landed). One open
-identifier: V2's Appendix A names no `source_aliases_v2` table although its
-Task 4 tests permanent-chain aliases — Task 6 below binds purge to "every
-alias row of the purged source" by semantics, not identifier (spec §9), and
-the cross-vertical review must pin the table name both plans share.
+Verified present in V2's plan with no amendment needed:
+`remote_sources_v2.policy_generation` (V2 Appendix A `ALTER TABLE` — spec
+Open dependency 1) and the wide nine-value `source_audit_v2` CHECK (V1 plan
+rev 5 Task 1 — spec Open dependency 2); the cross-vertical review re-verifies
+both landed.
 
 ## File map and shared interfaces
 
@@ -135,7 +164,9 @@ export interface AdminItemDetail {
   parentLogicalItemId:string|null; threadRootId:string|null
   counts:{deliveries:number; versions:number; claims:number; conflicts:number; audit:number}
   deliveries:AdminDeliveryRow[]; claims:AdminClaimRow[]; conflicts:AdminConflictRow[]
-  verification:{state:'none'|'pending'|'verified'|'unverified'; attempts:number; lastCheckedAt:string|null}
+  // rev 2 (RC5): one entry per verification check for this item; [] = never
+  // scheduled; bounded by the per-item publisher-URL cap the scheduler enforces
+  verification:{publisherFeedUrl:string; state:'pending'|'verified'|'unverified'; attempts:number; lastCheckedAt:string|null}[]
 }
 export interface AdminVersionRow {observationVersionId:string; arrivalAt:string; wireOrdinal:number; fingerprint:string; rawEvidence:string}
 export interface AdminDeliveryRow {deliveryId:string; sourceId:string; eligible:boolean; keyKind:string; key:string; firstSeenAt:string; versions:AdminVersionRow[]}
@@ -235,7 +266,8 @@ command, worker, or route yet.
   Appendix A tables and `logical_items_v2` columns exist after migration;
   `reconciliation_jobs_v2` accepts a `kind='verification'` row with null
   `run_id`/`observation_version_id` and rejects one with a null
-  `verification_batch_key` (proves lockstep amendment 1 landed — refuse the
+  `verification_batch_key` (proves lockstep amendment 1 — applied in V2
+  plan rev 5 — landed; refuse the
   task if this cannot pass without a table rebuild); an `item_audit_v2`
   insert with `category='false_positive'` and one with `'remediated'`
   succeed (the runtime trap spec §1.2 names) while a made-up category fails
@@ -259,26 +291,38 @@ command, worker, or route yet.
 
 **Files:** Modify `core/src/logical/moderation.ts`,
 `core/src/logical/projector.ts`, `core/src/logical/store.ts`,
-`core/src/logical/types.ts`; create `core/test/logical-moderation.test.ts`.
+`core/src/logical/types.ts`; create `core/test/logical-moderation.test.ts`,
+`core/test/logical-journal-effects.test.ts` (the ONE parametrized §6
+journal-effects table suite — later tasks append rows to it).
 
 **Interfaces:** Produces `hideItem`/`restoreItem` (each one ledger-backed
 `BEGIN IMMEDIATE` committing state change + one item-audit record + inline
 hint recompute + the §6 journal effect atomically) and the hidden predicate
 in the central projector. Domain-level only; routes arrive in Task 8.
 
-- [ ] **Step 1:** Add red command tests: hide sets `hidden_at`, appends one
-  audit row (actor kind `administrator`, required category, optional note)
-  and — only when the item was ordinarily visible — that item's journal
-  `remove`; hide of an already-ordinarily-absent item appends no journal
-  record; restore clears `hidden_at` only and appends the item's `upsert`
-  only when an eligible delivery currently exists (never publishes
-  previously ineligible evidence — hand-seed a hidden item whose only
-  delivery is quarantined and assert restore yields no upsert and no
-  visibility); local-origin → `{kind:'local_origin'}`; unknown →
-  `{kind:'unknown'}`; hide-on-hidden / restore-on-visible →
-  `{kind:'not_applicable'}`; identical command retry replays the stored
-  result; each fingerprint input varied (`command`, `logicalItemId`,
-  `actor`, `category`) → `{kind:'conflict'}`; a changed note alone replays.
+- [ ] **Step 1:** Add red command tests: hide sets `hidden_at` and appends
+  one audit row (actor kind `administrator`, required category, optional
+  note); restore clears `hidden_at` only and never publishes previously
+  ineligible evidence (hand-seed a hidden item whose only delivery is
+  quarantined and assert restore yields no visibility); local-origin →
+  `{kind:'local_origin'}`; unknown → `{kind:'unknown'}`; hide-on-hidden /
+  restore-on-visible → `{kind:'not_applicable'}`; identical command retry
+  replays the stored result; each fingerprint input varied (`command`,
+  `logicalItemId`, `actor`, `category`) → `{kind:'conflict'}`; a changed
+  note alone replays. The §6 journal rows these commands emit are asserted
+  in Step 2a's shared table, not here.
+- [ ] **Step 2a (rev 2, TP2):** Create
+  `core/test/logical-journal-effects.test.ts`: ONE parametrized table test
+  over the spec §6 journal-effects rows, seeded here with the hide/restore
+  rows (visible→hidden: that item's one `remove`; hide of an
+  already-ordinarily-absent item: no record; restore with an eligible
+  delivery: that item's one `upsert`; restore without: no record). Tasks 3,
+  5, 6, and 7 append ONLY their own §6 rows to this same table (fan-out
+  no-event; verification-success upsert-only-on-change and terminal
+  `unverified` no-event; purge's single `reset`; cleanup's conditional
+  `reset` and unblock no-event). No other suite asserts journal-effect
+  counts — per-task suites keep only their own new surfaces (HTTP
+  dispositions, projections).
 - [ ] **Step 2:** Add red surface tests reusing the V2 projection/SSE
   helpers: hidden is absent from every lens, publisher view, and feed
   branch; single-item and history routes' projections return undefined
@@ -290,20 +334,21 @@ in the central projector. Domain-level only; routes arrive in Task 8.
   its journal frame with the V2 `ReplyCountOverlay` (root ID + authoritative
   count from the send-time snapshot — V2 §5.5 verbatim); poll/edit/replay of
   a hidden item keeps it hidden across redelivery and new versions.
-- [ ] **Step 3:** Run `npm test -w core -- logical-moderation`; expect FAIL.
+- [ ] **Step 3:** Run `npm test -w core -- logical-moderation logical-journal-effects`; expect FAIL.
 - [ ] **Step 4:** Implement: add `hidden_at IS NULL` (and
   `structural_tombstone = 0`, consumed by Task 6) to the ONE
   ordinary-visibility predicate in `projector.ts` — no surface-local checks
   anywhere; implement both commands over the V1 ledger helper
   (`checkCommand`/`storeCommand`) with inline single-item hint recompute
   through the shared comparator.
-- [ ] **Step 5:** Run `npm test -w core -- logical-moderation logical-projector logical-sse && npm run typecheck -w core`; expect PASS (the two V2 suites prove no ordinary regression). Commit per Appendix C.
+- [ ] **Step 5:** Run `npm test -w core -- logical-moderation logical-journal-effects logical-projector logical-sse && npm run typecheck -w core`; expect PASS (the two V2 suites prove no ordinary regression). Commit per Appendix C.
 
 ### Task 3: Policy fan-out on the reconciliation drain
 
 **Files:** Create `core/src/logical/fanout.ts`,
 `core/test/logical-fanout.test.ts`; modify `core/src/logical/store.ts`,
-`core/src/logical/reconcile.ts`, `core/src/domain/source-repository.ts`.
+`core/src/logical/reconcile.ts`, `core/src/domain/source-repository.ts`,
+`core/test/logical-journal-effects.test.ts` (append this task's §6 rows).
 
 **Interfaces:** Produces `scheduleFanout`/`claimFanout`/`processFanoutBatch`
 and wires the generation-advancing V1 transitions (governance, federation,
@@ -321,14 +366,18 @@ commit and once at startup — no second loop.
   items per transaction in ascending logical-item ID over items holding any
   delivery from the source, recompute hints through the shared comparator
   only, and persist the cursor; restart resumes from the durable cursor
-  mid-fan-out; fan-out appends NO journal records and touches no
-  visibility/audit; pause/resume schedules no fan-out.
-- [ ] **Step 2:** Run `npm test -w core -- logical-fanout`; expect FAIL.
+  mid-fan-out; fan-out touches no visibility/audit (its §6 no-journal row is
+  appended to the shared journal-effects table, not asserted here);
+  pause/resume schedules no fan-out.
+- [ ] **Step 2:** Run `npm test -w core -- logical-fanout logical-journal-effects`; expect FAIL.
 - [ ] **Step 3:** Implement `fanout.ts` and the drain hook in `reconcile.ts`
   (`ponytail: one drain in the one Core process; leases/fences only if work
-  ever leaves the process`). Bounded single-item mutations (hide, restore,
+  ever leaves the process`). Batching exists to bound the write-lock hold of
+  a full-source hint recompute — one unbounded transaction would hold the
+  single SQLite writer lock for the whole recompute — not because of result
+  size (rev 2, TP3). Bounded single-item mutations (hide, restore,
   verification success, purge reselection) never enqueue fan-out.
-- [ ] **Step 4:** Run `npm test -w core -- logical-fanout logical-policy-events && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
+- [ ] **Step 4:** Run `npm test -w core -- logical-fanout logical-journal-effects logical-policy-events && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
 
 ### Task 4: Verification scheduling, caps, and the drain job kind
 
@@ -372,7 +421,8 @@ bounded batched fetch. Outcome handling arrives in Task 5.
 **Files:** Modify `core/src/logical/verification.ts`,
 `core/src/logical/projector.ts`, `core/src/logical/store.ts`,
 `core/src/logical/types.ts`, `core/test/logical-verification.test.ts`,
-`core/test/logical-presentation.test.ts`.
+`core/test/logical-presentation.test.ts`,
+`core/test/logical-journal-effects.test.ts` (append this task's §6 rows).
 
 **Interfaces:** Produces `resolveVerificationBatch`, the four-level
 comparator, and `publisher_feed_aliases_v2` writes. Widening V2's exact
@@ -385,8 +435,10 @@ three-level enum and its ranking tests is the intentional supersession spec
   persisted under a find-or-created source (`provenance:
   'origin_verification'`, `single_publisher + enabled + federation none`,
   governance inherited from the asserting source), one system-actor
-  item-audit entry, inline hint recompute, and the item's journal `upsert`
-  only when ordinary selection/author/classification changed; successful
+  item-audit entry, and inline hint recompute (the §6 rows — `upsert` only
+  when ordinary selection/author/classification changed, terminal
+  `unverified` no-event — are appended to the shared journal-effects table,
+  not asserted here); successful
   fetch with no match → terminal `unverified`, never contradicted, no
   retry; operational failure → the shared drain backoff, eight-attempt
   exhaustion → `unverified`; verification changes no
@@ -404,16 +456,17 @@ three-level enum and its ranking tests is the intentional supersession spec
   `publisher_feed_aliases_v2` row (URL → publisher); an aggregate redirect
   never merges publishers; an alias collision records a conflict row and
   merges nothing.
-- [ ] **Step 4:** Run `npm test -w core -- logical-verification logical-presentation`; expect FAIL.
+- [ ] **Step 4:** Run `npm test -w core -- logical-verification logical-presentation logical-journal-effects`; expect FAIL.
 - [ ] **Step 5:** Implement outcomes, the rung, and aliases. Run
-  `npm test -w core -- logical-verification logical-presentation logical-projector && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
+  `npm test -w core -- logical-verification logical-presentation logical-journal-effects logical-projector && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
 
 ### Task 6: Purge and structural tombstones
 
 **Files:** Create `core/src/logical/tombstones.ts`,
 `core/test/logical-purge.test.ts`; modify `core/src/logical/store.ts`,
 `core/src/logical/reconcile.ts`, `core/src/logical/threading.ts`,
-`core/src/logical/local.ts`, `core/src/logical/projector.ts`.
+`core/src/logical/local.ts`, `core/src/logical/projector.ts`,
+`core/test/logical-journal-effects.test.ts` (append this task's §6 rows).
 
 **Interfaces:** Produces `purgeSource`, the shared `removeSourceEvidence`
 step-4 helper (reused verbatim by Task 7's cleanup), the
@@ -426,16 +479,31 @@ structural-tombstone terminal state, and its descendant-deletion sweep.
   transaction (`ponytail: one transaction, no chunked purge; a single-user
   instance's worst source fits comfortably in one SQLite write transaction`)
   committing atomically: the tombstone row (canonical URL, terminal
-  block+purge facts) plus one tombstone-alias row per alias of the purged
-  source; deletion of the source's deliveries, observation versions, claims
-  of those deliveries, verification checks, redirect evidence, validators,
-  runs/jobs, and fan-out rows; deletion of the source row with its cascades;
+  block+purge facts) plus one tombstone-alias row per `source_aliases_v2`
+  row of the purged source (rev 2, RC1 — the name is pinned by V2 rev 5,
+  copied before the source row's deletion cascades the originals away);
+  deletion of every `ON DELETE RESTRICT` child in the purge inventory — the
+  source's deliveries and their `presentation_entries_v2` rows, observation
+  versions, claims of those deliveries, `publisher_names_v2` rows,
+  verification checks, redirect evidence, validators, runs/jobs, fan-out and
+  health rows — and, for each publisher deleted as fully unreferenced, its
+  `publisher_names_v2` and `publisher_feed_aliases_v2` rows; deletion of the
+  source row with its cascades;
   per affected logical item — reselect hints when other deliveries remain,
   delete when unsupported and unreferenced, convert to structural tombstone
   when a surviving descendant references it, delete fully unreferenced
-  publishers; exactly ONE journal `reset` and the ledger result. Fault
+  publishers; exactly ONE journal `reset` (count asserted in the shared
+  journal-effects table) and the ledger result. Fault
   injection before the ledger write rolls back everything including the
   tombstone.
+- [ ] **Step 1a (rev 2, RC2):** State and test the inventory RULE, not just
+  the list: the purge inventory is derived from the FK graph — every
+  `ON DELETE RESTRICT` child of a row purge deletes is deleted first. Add a
+  red test that walks `PRAGMA foreign_key_list` over every v2/v3 table and
+  asserts each RESTRICT edge pointing at `remote_sources_v2`,
+  `deliveries_v2`, `observation_versions_v2`, `remote_publishers_v2`, or
+  `logical_items_v2` is named in the purge inventory, so a future child
+  table breaks this test instead of runtime purge.
 - [ ] **Step 2:** Add red structural-tombstone tests: the converted row
   retains only logical ID, parent/root edges, and the immutable sort key —
   content, author, source, publisher, and evidence gone; it serializes only
@@ -449,22 +517,23 @@ structural-tombstone terminal state, and its descendant-deletion sweep.
   from `deleted_local` (which keeps its permalink anchor and is never
   swept — assert both behaviors side by side); exact thread edges survive
   restart.
-- [ ] **Step 3:** Run `npm test -w core -- logical-purge`; expect FAIL.
+- [ ] **Step 3:** Run `npm test -w core -- logical-purge logical-journal-effects`; expect FAIL.
 - [ ] **Step 4:** Implement `tombstones.ts` (tombstone + alias writes,
   `removeSourceEvidence`, sweep hook called from the existing
   descendant-deletion paths in `local.ts`/`threading.ts`) and the
   reconciliation guard. The single reset is the uniform barrier — block
   already made this evidence ineligible, so purge changes no ordinary
   visibility.
-- [ ] **Step 5:** Run `npm test -w core -- logical-purge logical-local logical-threading && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
+- [ ] **Step 5:** Run `npm test -w core -- logical-purge logical-journal-effects logical-local logical-threading && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
 
 ### Task 7: Tombstone resolution, unblock, and last-subscription cleanup
 
 **Files:** Modify `core/src/logical/tombstones.ts`,
 `core/src/domain/source-service.ts`, `core/src/domain/source-repository.ts`,
 `core/src/logical/acquisition.ts`, `core/src/logical/verification.ts`,
-`core/test/source-cleanup.test.ts`; create
-`core/test/logical-tombstones.test.ts`.
+`core/test/source-cleanup.test.ts`,
+`core/test/logical-journal-effects.test.ts` (append this task's §6 rows);
+create `core/test/logical-tombstones.test.ts`.
 
 **Interfaces:** Produces `isTombstoned`, the resolution branches (V1's
 permanently-empty-table branches become live), `unblockTombstone`, and the
@@ -472,7 +541,9 @@ cleanup item effects V1 deferred here.
 
 - [ ] **Step 1:** Add red resolution tests: subscribe, OPML import,
   federation establishment, and every redirect hop in acquisition and
-  verification check tombstones AND tombstone aliases and return the
+  verification check tombstones AND tombstone aliases (the
+  `source_aliases_v2` rows purge copied into `tombstone_aliases_v2` — rev 2,
+  RC1: the pinned V2 rev 5 name) and return the
   existing generic unavailable result — same body as today's unavailable, no
   oracle distinguishing a tombstoned URL.
 - [ ] **Step 2:** Add red unblock tests: unblock deletes the tombstone and
@@ -489,13 +560,14 @@ cleanup item effects V1 deferred here.
   shared items reselect, unsupported items delete, descendant-referenced
   items become structural tombstones, unreferenced publishers delete — but
   writes NO block tombstone and appends one `reset` only when any ordinary
-  item was affected (zero-effect cleanup appends nothing); a source whose
+  item was affected (zero-effect cleanup appends nothing; both counts
+  asserted in the shared journal-effects table); a source whose
   deliveries are current verification evidence for any logical item is never
   removed (hand-seeded — such sources have no subscriptions, the condition
   is the guard), replacing V2's interim retained-if-referenced rule and
   V1's deferred `provenance = 'origin_verification'` branch.
-- [ ] **Step 4:** Run `npm test -w core -- logical-tombstones source-cleanup`; expect FAIL. Implement.
-- [ ] **Step 5:** Run `npm test -w core -- logical-tombstones source-cleanup source-subscribe opml source-federation && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
+- [ ] **Step 4:** Run `npm test -w core -- logical-tombstones logical-journal-effects source-cleanup`; expect FAIL. Implement.
+- [ ] **Step 5:** Run `npm test -w core -- logical-tombstones logical-journal-effects source-cleanup source-subscribe opml source-federation && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
 
 ### Task 8: Administrative review APIs
 
@@ -513,8 +585,9 @@ every envelope carrying `model:'logical-v2'`.
   field; disposition mapping — `applied` 200, `unknown` the neutral 404,
   `local_origin`/`not_applicable`/`not_blocked` their fixed 409 bodies,
   ledger conflict the fixed idempotency 409, replay the stored 200 body;
-  one mutation, one audit record, and one journal effect per command
-  (assert counts across a retry).
+  one mutation and one audit record per command across a retry
+  (journal-effect counts are owned by the Task 2 shared journal-effects
+  table, not re-asserted here — rev 2, TP2).
 - [ ] **Step 2:** Add red detail/read tests: `GET /admin/items/:id` returns
   `AdminItemDetail` with bounded inline sections capped at
   `ADMIN_SECTION_CAP` newest-first and TRUE totals in `counts` (seed 101
@@ -524,7 +597,12 @@ every envelope carrying `model:'logical-v2'`.
   escaped text under the V2 §1.5 digest rules — no secrets, no unbounded
   blobs, no rendered HTML from Core; `state` covers all five values
   (including `deleted_local` and `structural_tombstone`);
-  `verification.attempts` reads from job rows. `GET /admin/items/:id/audit`
+  `verification` lists one per-check entry `{publisherFeedUrl, state,
+  attempts, lastCheckedAt}` (rev 2, RC5) — `state` from
+  `verification_checks_v2`, `attempts`/`lastCheckedAt` from that check's
+  batch-key job rows, `[]` for an item with no checks, and the array is
+  bounded by the per-item publisher-URL cap the scheduler enforces (seed
+  past the cap and assert the bound). `GET /admin/items/:id/audit`
   and `GET /admin/sources/:id/items` paginate via the shared codec + the
   shared invalid-cursor table (`400 …"invalid cursor"`); `GET
   /admin/tombstones` lists `TombstoneView[]` unpaginated (spec: only audit
@@ -568,7 +646,9 @@ admin-form convention). No ordinary page changes anywhere.
   note, and the retained command ID; raw evidence renders as escaped text;
   any content preview goes through `web/src/lib/server/render.ts` only —
   assert no second sanitize path; bounded sections render their cap with
-  the true totals visible.
+  the true totals visible; the verification section lists one row per check
+  — publisher feed URL, state, attempts, last checked — and renders nothing
+  for an empty array (rev 2, RC5).
 - [ ] **Step 2:** Add red source/tombstone tests: source detail shows
   `conflictCount` and an items link (`/admin/items/…` navigation from
   `GET /admin/sources/:id/items`); blocked sources alone show the purge
@@ -589,7 +669,11 @@ admin-form convention). No ordinary page changes anywhere.
 
 **Files:** Create `core/test/logical-v3-vertical.test.ts`.
 
-**Interfaces:** Proves spec §10 and §11 end to end. Passing does NOT
+**Interfaces:** Proves spec §10 and §11 end to end. Rev 2 (TP4): this task
+asserts the end-to-end wiring ONCE per mandatory scenario; exhaustive
+per-surface enumeration already lives in Task 2 (hidden surfaces) and Task 6
+(tombstones) and is not repeated here — the spec-mandated scenarios below
+are kept in full. Passing does NOT
 authorize enabling v2 by default or beginning Vertical 4.
 
 - [ ] **Step 1:** Add the foundation's mandatory moderation scenario as one
@@ -646,24 +730,15 @@ and semantics, not identifiers. Only the audit page index ships
 (`ponytail: source→items pagination rides the existing timeline index via a
 deliveries join; add a composite only when it measurably slows`).
 
-**Lockstep amendment 1 (created by V2, pinned here):**
-
-```text
-reconciliation_jobs_v2(id TEXT PRIMARY KEY,
- kind TEXT NOT NULL DEFAULT 'observation' CHECK(kind IN('observation','verification')),
- run_id TEXT REFERENCES acquisition_runs_v2(id),
- observation_version_id TEXT UNIQUE REFERENCES observation_versions_v2(id),
- verification_batch_key TEXT,
- status TEXT NOT NULL CHECK(status IN('pending','processing','retrying','reconciled','conflicted','failed')),
- attempts INTEGER NOT NULL,next_attempt_at TEXT NOT NULL,
- failure_category TEXT,diagnostic TEXT,created_at TEXT NOT NULL,
- CHECK((kind='observation') = (observation_version_id IS NOT NULL AND run_id IS NOT NULL)),
- CHECK((kind='verification') = (verification_batch_key IS NOT NULL)))
-```
-
-For verification jobs the terminal statuses map: `reconciled` = batch
-resolved, `failed` = exhaustion (which also writes `unverified` on the
-checks). SQLite UNIQUE admits multiple NULL `observation_version_id` rows.
+**`reconciliation_jobs_v2` — created verification-ready by V2; no V3 DDL.**
+The one binding DDL is V2 plan rev 5's Appendix A (lockstep amendment 1,
+applied there; this plan's review cycle is its origin): nullable
+`run_id`/`observation_version_id`, `kind TEXT NOT NULL DEFAULT
+'observation'`, nullable `verification_batch_key`, and the two kind CHECKs.
+V3 references that form and redefines nothing. For verification jobs the
+terminal statuses map: `reconciled` = batch resolved, `failed` = exhaustion
+(which also writes `unverified` on the checks). SQLite UNIQUE admits
+multiple NULL `observation_version_id` rows.
 
 ## Appendix B: exact V1/V2 integration points
 
@@ -701,12 +776,12 @@ exit 0 after.
 | Task | Red/green command | Explicit staged paths | Commit subject |
 |---|---|---|---|
 | 1 | `npm test -w core -- logical-v3-schema && npm run typecheck -w core` | `core/src/logical/schema.ts core/src/logical/types.ts core/src/logical/moderation.ts core/src/logical/store.ts core/src/domain/types.ts core/src/storage/sqlite.ts core/test/logical-v3-schema.test.ts` | `core: add logical v3 moderation schema and item audit` |
-| 2 | `npm test -w core -- logical-moderation logical-projector logical-sse && npm run typecheck -w core` | `core/src/logical/moderation.ts core/src/logical/projector.ts core/src/logical/store.ts core/src/logical/types.ts core/test/logical-moderation.test.ts` | `core: hide and restore logical items` |
-| 3 | `npm test -w core -- logical-fanout logical-policy-events && npm run typecheck -w core` | `core/src/logical/fanout.ts core/src/logical/store.ts core/src/logical/reconcile.ts core/src/domain/source-repository.ts core/test/logical-fanout.test.ts` | `core: converge hints with policy fan-out` |
+| 2 | `npm test -w core -- logical-moderation logical-journal-effects logical-projector logical-sse && npm run typecheck -w core` | `core/src/logical/moderation.ts core/src/logical/projector.ts core/src/logical/store.ts core/src/logical/types.ts core/test/logical-moderation.test.ts core/test/logical-journal-effects.test.ts` | `core: hide and restore logical items` |
+| 3 | `npm test -w core -- logical-fanout logical-journal-effects logical-policy-events && npm run typecheck -w core` | `core/src/logical/fanout.ts core/src/logical/store.ts core/src/logical/reconcile.ts core/src/domain/source-repository.ts core/test/logical-fanout.test.ts core/test/logical-journal-effects.test.ts` | `core: converge hints with policy fan-out` |
 | 4 | `npm test -w core -- logical-verification logical-reconcile && npm run typecheck -w core` | `core/src/logical/verification.ts core/src/logical/store.ts core/src/logical/reconcile.ts core/src/logical/types.ts core/test/logical-verification.test.ts` | `core: schedule bounded origin verification` |
-| 5 | `npm test -w core -- logical-verification logical-presentation logical-projector && npm run typecheck -w core` | `core/src/logical/verification.ts core/src/logical/projector.ts core/src/logical/store.ts core/src/logical/types.ts core/test/logical-verification.test.ts core/test/logical-presentation.test.ts` | `core: verify origins and rank verified evidence` |
-| 6 | `npm test -w core -- logical-purge logical-local logical-threading && npm run typecheck -w core` | `core/src/logical/tombstones.ts core/src/logical/store.ts core/src/logical/reconcile.ts core/src/logical/threading.ts core/src/logical/local.ts core/src/logical/projector.ts core/test/logical-purge.test.ts` | `core: purge blocked sources into tombstones` |
-| 7 | `npm test -w core -- logical-tombstones source-cleanup source-subscribe opml source-federation && npm run typecheck -w core` | `core/src/logical/tombstones.ts core/src/domain/source-service.ts core/src/domain/source-repository.ts core/src/logical/acquisition.ts core/src/logical/verification.ts core/test/logical-tombstones.test.ts core/test/source-cleanup.test.ts` | `core: resolve tombstones and extend cleanup` |
+| 5 | `npm test -w core -- logical-verification logical-presentation logical-journal-effects logical-projector && npm run typecheck -w core` | `core/src/logical/verification.ts core/src/logical/projector.ts core/src/logical/store.ts core/src/logical/types.ts core/test/logical-verification.test.ts core/test/logical-presentation.test.ts core/test/logical-journal-effects.test.ts` | `core: verify origins and rank verified evidence` |
+| 6 | `npm test -w core -- logical-purge logical-journal-effects logical-local logical-threading && npm run typecheck -w core` | `core/src/logical/tombstones.ts core/src/logical/store.ts core/src/logical/reconcile.ts core/src/logical/threading.ts core/src/logical/local.ts core/src/logical/projector.ts core/test/logical-purge.test.ts core/test/logical-journal-effects.test.ts` | `core: purge blocked sources into tombstones` |
+| 7 | `npm test -w core -- logical-tombstones logical-journal-effects source-cleanup source-subscribe opml source-federation && npm run typecheck -w core` | `core/src/logical/tombstones.ts core/src/domain/source-service.ts core/src/domain/source-repository.ts core/src/logical/acquisition.ts core/src/logical/verification.ts core/test/logical-tombstones.test.ts core/test/source-cleanup.test.ts core/test/logical-journal-effects.test.ts` | `core: resolve tombstones and extend cleanup` |
 | 8 | `npm test -w core -- logical-review-api logical-admin-api && npm run typecheck -w core` | `core/src/api/logical-routes.ts core/src/logical/store.ts core/src/logical/types.ts core/test/logical-review-api.test.ts` | `core: expose logical v3 review APIs` |
 | 9 | `npm test -w web && npm run check -w web && npm run build -w web` | `web/src/routes/admin/items/[id]/+page.server.ts web/src/routes/admin/items/[id]/+page.svelte web/src/routes/admin/items/[id]/item-review.test.ts web/src/lib/logical-api.ts web/src/lib/logical-types.ts web/src/routes/admin/sources/[sourceId]/+page.server.ts web/src/routes/admin/sources/[sourceId]/+page.svelte web/src/routes/admin/sources/[sourceId]/source-detail.test.ts web/src/routes/admin/feeds/+page.server.ts web/src/routes/admin/feeds/+page.svelte web/src/routes/admin/feeds/source-actions.test.ts` | `web: render moderation review surfaces` |
 | 10 | full completion gate in Task 10 | `core/test/logical-v3-vertical.test.ts` | `test: complete logical v3 vertical` |
@@ -732,6 +807,8 @@ expect(hide('item-1', 'c1')).toEqual(first)                    // identical retr
 expect(hide('item-1', 'c2')).toEqual({kind:'not_applicable'})  // already hidden — distinct 409 body
 expect(hide('item-1', 'c1', 'abuse')).toEqual({kind:'conflict'}) // changed category, reused ID
 expect(hide(localItem, 'c3')).toEqual({kind:'local_origin'})
+
+// core/test/logical-journal-effects.test.ts — the ONE §6 table (rev 2, TP2)
 expect(journalKindsFor('item-1')).toEqual(['remove'])          // visible→hidden: one remove, once
 
 // core/test/logical-purge.test.ts — atomicity incl. the tombstone
