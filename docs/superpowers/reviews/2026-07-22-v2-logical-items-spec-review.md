@@ -239,3 +239,52 @@ MISSING: reset-generation recovery tests · count-on-frame + query-time-count
 drain + startup drain · lastPollAt rename + skip-if-recent · C1 carve (two
 tests) · jsonWrite pin · fingerprint pin · C5 V1-toEqual edit ·
 push-capability column (WP4) · policy_generation column (§10.2).
+
+---
+
+# PLAN REVIEW (2026-07-23): V2 plan rev 3 dual pass → rev 4 instructions
+
+Ponytail (VP1-8) + correctness (QC1-4), adjudicated by the orchestrator.
+
+**QC1 (HIGH, fold):** Task 12 Step 4a misplaces the capability supersession —
+the toEqual({sourceModelV2:true}) handoff lives in CORE
+(core/test/source-capability-api.test.ts, per V1 plan L92-94/862-866) and no
+V2 task widens the core /capabilities endpoint. Fix: add the core-side step
+(endpoint emits model/journalCursorVersion/streamProtocolVersion when ON;
+update + stage the core test) to the task that owns core capability code;
+Step 4a keeps only the web type widening.
+**QC2+VP5 (fold):** AdminOperationalPage appears once, undefined — canonical
+name is AdminPage<T> everywhere.
+**QC3 (fold):** Appendix D's refresh sketch must carry the admin credential
+(cookie per the subscriptions-api.test.ts pattern) or 401 fires before the
+body assertion.
+**QC4 (fold):** Task 12's "feed proxy" prose either names+stages the real
+path or is deleted.
+**VP1 (REFUTED — keep column, add one sentence):** raw_evidence_json is
+per-ITEM (observation_versions_v2); feed-level hub/cloud discovery is channel
+data per-item evidence cannot reproduce — capture-at-parse into
+acquisition_runs_v2.push_capability_json is forced (V3 review decision #5).
+State this in Appendix A so it isn't re-found.
+**VP2 (fold):** keep the single shared write-transaction boundary; drop the
+branded ReadTx/WriteTx unique-symbol types and the nested-write-rejection
+test — thin read()/write() over raw.transaction(fn).deferred()/.immediate()
+(house idiom, sqlite.ts:489/500/549/707; nesting is SAVEPOINT-safe natively).
+**VP3 (fold):** ship only PK/UNIQUE auto-indexes + the timeline ordering
+index; drop the other composite indexes with a ponytail comment (add each
+when a real query measurably slows).
+**VP4 (fold):** Task 8 + Appendix C row 8: threading.ts + its test are
+MODIFY (Task 4 creates them).
+**VP6 (fold):** drop the LogicalStore interface (export the concrete store;
+TS infers); keep LogicalReadTx as the one stub seam tests need.
+**VP7 (fold):** one shared encodeCursor/decodeCursor(version, tuple) for the
+three pagination cursors + one shared invalid-cursor test table; the journal
+cursor stays separate (spec §5.2).
+**VP8 (fold):** merge Task 3 into Task 2 (journal schema + its three
+functions, TDD steps intact) — 13 tasks → 12; renumber + Appendix C.
+
+Verified clean (both passes): drift-fold completeness (dead tokens only in
+the changelog), policy_generation single-owner, push_capability_json
+nullability chain, migration tail discipline, OFF-flag isolation at task
+level, Appendix D vs folded signatures, jsonWrite citation exact, layered
+count tests are three real layers not duplication, Appendix C ceremony =
+house pattern.
