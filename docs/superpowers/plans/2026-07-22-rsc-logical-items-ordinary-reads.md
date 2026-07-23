@@ -8,29 +8,41 @@ writing or exposing Vertical 3 evidence-review behavior.
 
 **Architecture:** Extend the Vertical 1 source registry with an additive
 logical-v2 schema. Network acquisition commits immutable observations and
-durable jobs; a fenced worker reconciles each version into logical identity,
-presentation, ancestry, and journal effects. One snapshot projector serves API,
-feeds, Web SSR, and SSE while local posts remain authoritative through a
-one-to-one bridge.
+durable jobs; an in-process serial drain reconciles each version into logical
+identity, presentation, ancestry, and journal effects. One snapshot projector
+serves API, feeds, Web SSR, and SSE while local posts remain authoritative
+through a one-to-one bridge.
 
 **Tech Stack:** Node 22 native TypeScript, Hono, better-sqlite3/Kysely,
 feedsmith, Vitest, SvelteKit 2, Svelte 5.
 
-**Revision:** 2 — repairs dependency order, defines the shared SQLite
-transaction boundary and every cross-task signature up front, and splits broad
-construction steps into executable red/green slices.
+**Revision:** 3 — folds spec review rev 1 (folded into the spec at commit
+`9892757`) onto the revision-2 spine (dependency order, shared SQLite
+transaction boundary, up-front cross-task signatures, red/green slices — all
+retained). Removed as dead: the epoch/`replay_floor_seq`/`pruneJournal`
+journal ring (now `highWaterSeq` + `resetGeneration`), every fence/`leaseUntil`
+field and column (acquisition claims, reconciliation jobs, orphan work) in
+favor of a per-source in-process in-flight boolean and a serial drain, the
+four-slot scheduler and its 16-row window (now one global serial poll loop
+with `next_poll_at` renamed `last_poll_at`), parent/root reply upserts and
+their reset fallback (now one journal effect per reply plus a send-time
+`replyCounts` overlay), "four evidence levels" (now three), and the
+`Idempotency-Key` header (command IDs travel as body `commandId`). Added: the
+C1 capability-failure carve, the C2 `jsonWrite` pin, the C3 request-fingerprint
+pin, the C5 V1 capability-test supersession, the WP4 inert push-capability
+column, and the source-scoped `policy_generation` column.
 
 **Status:** Ready for repository plan review; no implementation is authorized.
 
 ## Global Constraints
 
-- Governing spec: `docs/superpowers/specs/2026-07-22-rsc-logical-items-ordinary-reads-design.md` rev 4.
+- Governing spec: `docs/superpowers/specs/2026-07-22-rsc-logical-items-ordinary-reads-design.md` rev 4 (review rev 1 folded, commit `9892757`).
 - Prerequisite: Vertical 1 plan rev 4 has been implemented and reviewed.
 - Companion dependency: root-only plan commit `7e7dc14` is executed as the
   first Vertical 2 slice; refuse execution if that path no longer matches the
   reviewed commit.
 - `RSC_SOURCE_MODEL_V2` remains startup-immutable and defaults off. No dual writes, legacy remote conversion, v2 push, origin verification, moderation, purge, evidence-review API, or policy fan-out.
-- V2 startup fails closed until schema, activation barrier, projector, journal, scheduler, reconciliation worker, and orphan worker are ready.
+- V2 startup fails closed until schema, activation barrier, projector, journal, poll loop, reconciliation drain, and orphan worker are ready.
 - Core stores and returns semantic content; Web alone renders HTML through `web/src/lib/server/render.ts`. Never add another sanitizer path.
 - Use one SQLite write transaction for every domain mutation and its journal effects. Notifications happen after commit and contain sequence hints only.
 - No TypeScript parameter properties in `core/src`; no new dependency without a separate approved design.
@@ -48,12 +60,12 @@ core/src/logical/types.ts             exact spec DTOs and internal records
 core/src/logical/schema.ts            additive migration SQL and activation v1
 core/src/logical/database.ts          shared read/write SQLite transaction context
 core/src/logical/store.ts             bounded transactional reads/writes
-core/src/logical/journal.ts           epoch, cursor, append, replay, pruning
+core/src/logical/journal.ts           reset generation, cursor, append, replay
 core/src/logical/projector.ts         pure effective selection and DTO projection
 core/src/logical/local.ts             local bridge and mutation integration
-core/src/logical/acquisition.ts       fenced fetch, redirects, parsing, observations
-core/src/logical/scheduler.ts         four-slot polling and health/backoff
-core/src/logical/reconcile.ts         single fenced reconciliation worker
+core/src/logical/acquisition.ts       bounded fetch, redirects, parsing, observations
+core/src/logical/scheduler.ts         single-lane serial polling and durable health
+core/src/logical/reconcile.ts         in-process serial reconciliation drain
 core/src/logical/threading.ts         parent resolution, adoption, bounded projection
 core/src/logical/runtime.ts           startup activation and worker composition
 core/src/api/logical-routes.ts        v2 ordinary/admin routes and stream
@@ -65,7 +77,7 @@ web/src/lib/logical-live.ts           upsert/remove/reset reconciliation
 `core/src/logical/types.ts` exports the spec names verbatim:
 `LogicalItemDto`, `SelectedAuthor`, `ReplyContextDto`, `EnclosureDto`,
 `LogicalSingleItemEnvelope`, `LogicalThreadEnvelope`, `LogicalHistoryEnvelope`,
-`TimelineLens`, `LogicalTimelineEnvelope`, `JournalCursor`,
+`TimelineLens`, `LogicalTimelineEnvelope`, `JournalCursor`, `ReplyCountOverlay`,
 `AdminRunProjection`, `AdminRefreshResult`, and `AdminAcquisitionRun`.
 
 Vertical 1 and Vertical 2 share this exact transaction boundary. Task 2 changes
@@ -121,26 +133,25 @@ The input/result records are fixed before their first consumer:
 export type AcquisitionReason =
   | {kind:'scheduled'}
   | {kind:'administrator';command:CommandEnvelope}
-export interface ClaimAcquisitionInput {sourceId:string;reason:AcquisitionReason;now:string;leaseUntil:string}
+export interface ClaimAcquisitionInput {sourceId:string;reason:AcquisitionReason;now:string}
 export type ClaimAcquisitionResult =
-  | {kind:'claimed';runId:string;fence:number;source:RemoteSource}
-  | {kind:'joined';runId:string;fence:number}
+  | {kind:'claimed';runId:string;source:RemoteSource}
   | {kind:'unavailable';reason:'unknown'|'paused'|'blocked'|'unscheduled'}
-export interface CommitAcquisitionInput {runId:string;sourceId:string;fence:number;committedAt:string;effectiveUrl:string|null;validators:ConditionalValidators|null;redirects:RedirectObservation[];observations:NewObservationVersion[];findings:AcquisitionFinding[];counters:AdminAcquisitionCounters;outcome:AdminFetchProjection['outcome']}
-export interface FailAcquisitionInput {runId:string;sourceId:string;fence:number;now:string;outcome:'operational_failure'|'cancelled'|'superseded'|'policy_rejected';category:AdminFetchProjection['failureCategory'];diagnostic:string|null}
-export interface ReconciliationClaim {jobId:string;runId:string;observationVersionId:string;fence:number;leaseUntil:string}
+export interface CommitAcquisitionInput {runId:string;sourceId:string;committedAt:string;effectiveUrl:string|null;validators:ConditionalValidators|null;redirects:RedirectObservation[];observations:NewObservationVersion[];findings:AcquisitionFinding[];counters:AdminAcquisitionCounters;outcome:AdminFetchProjection['outcome'];pushCapabilityJson:string|null}
+export interface FailAcquisitionInput {runId:string;sourceId:string;now:string;outcome:'operational_failure'|'cancelled'|'superseded'|'policy_rejected';category:AdminFetchProjection['failureCategory'];diagnostic:string|null}
+export interface ReconciliationClaim {jobId:string;runId:string;observationVersionId:string}
 export interface ReconcileClaimInput {claim:ReconciliationClaim;now:string}
 export type ReconcileResult = {kind:'reconciled'|'conflicted';logicalItemId:string}|{kind:'superseded'}
-export interface RecordJobFailureInput {jobId:string;fence:number;now:string;category:'operational_exhausted'|'invariant_or_data_failure';diagnostic:string|null;retryAt:string|null}
+export interface RecordJobFailureInput {jobId:string;now:string;category:'operational_exhausted'|'invariant_or_data_failure';diagnostic:string|null;retryAt:string|null}
 export interface NewOrphanWork {aliasKind:'permalink'|'scoped_opaque';aliasKey:string;candidateHighWater:string;createdAt:string}
-export interface OrphanClaim {workId:string;fence:number;candidateHighWater:string;leaseUntil:string}
+export interface OrphanClaim {workId:string;candidateHighWater:string}
 export interface AdoptOrphansInput {claim:OrphanClaim;now:string;limit:number}
 export interface AdoptOrphansResult {adopted:number;ambiguous:number;remaining:boolean}
 export interface TimelineQuery {lens:TimelineLens;before:TimelineCursorV2|null;limit:number;viewer:ProjectionViewer}
 export interface ProjectionViewer {localAccountId:string|null;activeSourceIds:readonly string[]}
 export interface ConditionalValidators {effectiveUrl:string;etag:string|null;lastModified:string|null}
 export interface SourceModelV2Activation {schemaVersion:1;state:'never_activated'|'active'|'reconciliation_required';lastActivatedAt:string|null;lastReconciledAt:string|null}
-export interface JournalMetadata {epoch:string;highWaterSeq:number;replayFloorSeq:number}
+export interface JournalMetadata {highWaterSeq:number;resetGeneration:number}
 export type JournalChangeMask = 'presentation'|'author'|'visibility'|'classification'|'ancestry'|'reply_counts'|'history'|'barrier'
 export interface RedirectObservation {ordinal:number;status:number|null;fromEvidence:string;toEvidence:string;permanentProof:boolean}
 export interface NewObservationVersion {id:string;deliveryId:string;wireOrdinal:number;arrivalAt:string;fingerprintVersion:1;fingerprint:string;canonicalMaterial:Uint8Array;rawEvidenceJson:string;normalizedJson:string}
@@ -195,9 +206,9 @@ modify `core/src/storage/sqlite.ts`, `core/src/domain/source-repository.ts`.
 Modify `core/src/server.ts` to reject configured v2 until Task 11 replaces the
 guard with the complete runtime.
 
-**Interfaces:** Produces all signatures above, `DatabaseContext`, additive
-tables, and inactive activation row. It does not reconcile, append journal, or
-mark v2 active.
+**Interfaces:** Produces all signatures above (the review-rev-1-folded
+shapes), `DatabaseContext`, additive tables, and inactive activation row. It
+does not reconcile, append journal, or mark v2 active.
 
 - [ ] **Step 1:** Add `logical-database.test.ts` proving nested `write()` is
   rejected and one injected throw rolls back source, audit, ledger, and logical
@@ -208,7 +219,9 @@ mark v2 active.
 - [ ] **Step 3:** Add `logical-schema.test.ts` asserting the exact tables listed
   in Appendix A and activation `{schemaVersion:1,state:'never_activated',
   lastActivatedAt:null,lastReconciledAt:null}` with no journal row.
-- [ ] **Step 4:** Add the exact Rev 4 types and schema migration; run
+- [ ] **Step 4:** Add the exact folded rev 4 types (boolean
+  `classification.personal`/`.federated`, three evidence levels,
+  `resetGeneration` journal metadata) and schema migration; run
   `npm test -w core -- logical-database logical-schema && npm run typecheck -w core`;
   expect PASS.
 - [ ] **Step 4a:** Add a server composition assertion that
@@ -222,11 +235,11 @@ mark v2 active.
 modify `core/src/logical/store.ts`.
 
 **Interfaces:** Produces `encodeJournalCursor`, `decodeJournalCursor`,
-`appendJournal`, `readJournalBatch`, `pruneJournal`, and snapshot cursor reads.
+`appendJournal`, `readJournalBatch`, and snapshot cursor reads.
 
-- [ ] **Step 1:** Add red tests for epoch-qualified opaque cursors, strict sequence growth, 10,000-row retention, floor equality, below-floor/future/wrong-epoch invalidity, atomic prune/floor advancement, reconstruction epoch change, and reset rows.
+- [ ] **Step 1:** Add red tests for generation-qualified opaque cursors, strict monotonic sequence growth without reuse, unknown/stale/future/older-generation cursor invalidity each answered by a single `reset` plus SSR refetch, ordinary `barrier` resets leaving the generation unchanged, reconstruction incrementing the generation with its initial reset in one transaction, and reset rows.
 - [ ] **Step 2:** Run `npm test -w core -- logical-journal`; expect FAIL.
-- [ ] **Step 3:** Implement cursor version 1 and transactional append/prune. Journal rows contain only sequence, kind, nullable logical ID, bounded change mask, and timestamp.
+- [ ] **Step 3:** Implement cursor version 1 and transactional append — no retention ring, no pruning (`ponytail: no pruning; add retention when the journal table measurably matters`). Journal rows contain only sequence, kind, nullable logical ID, bounded change mask, and timestamp.
 - [ ] **Step 4:** Run and commit exactly as Task 3's Appendix C row.
 
 ### Task 4: Local-origin bridge and atomic local mutations
@@ -258,20 +271,25 @@ modify `core/src/domain/service.ts`, `core/src/storage/sqlite.ts`,
 modify `core/src/domain/ingest.ts`, `core/src/domain/push-guard.ts`,
 `core/src/logical/store.ts`.
 
-**Interfaces:** Produces `acquireSource(sourceId, reason, fence, signal)`, adapter
-candidate records, canonical fingerprint v1, and atomic run/observation/job commit.
+**Interfaces:** Produces `acquireSource(sourceId, reason, signal)`, the
+per-source in-process in-flight flag, adapter candidate records, canonical
+fingerprint v1, and atomic run/observation/job commit.
 
 - [ ] **Step 1:** Add red fixture tests for the total 10-second deadline, streaming 5 MiB decoded cap, five redirects, loop/hop SSRF/governance/ownership checks, permanent-chain aliases, effective-URL validators, 1,000 candidates, 1 MiB item evidence, 32 enclosures, operational string limits, redacted digest evidence, and inert push discovery.
 - [ ] **Step 1a:** In adapter table tests assert RSS and Atom use document
   order, JSON Feed uses array order, and h-feed uses document order; assign
   ordinals before taking candidates `0..999`, and assert candidate 1000 is
   omitted even when earlier candidates were skipped.
+- [ ] **Step 1b:** Add an isolation test that a feed advertising WebSub/rssCloud
+  records only the inert parse-time push-capability evidence on its run row
+  (nullable `push_capability_json`, validated by Vertical 3), persists no
+  WebSub/rssCloud subscription or claim, and calls no push endpoint.
 - [ ] **Step 2:** Add red identity tests for exact opaque IDs, normalized permalinks, fallback keys, complete first-arrival tuple, unchanged seen metadata, same-key multi-version jobs, and fingerprint-collision skip.
 - [ ] **Step 3:** Run `npm test -w core -- logical-acquisition logical-bounds`; expect FAIL.
-- [ ] **Step 4:** Implement streaming fetch/parsers and the two fenced transactions. Never call push endpoints and never partially parse an oversized body.
+- [ ] **Step 4:** Implement streaming fetch/parsers and the two transactions (command association commits before the acquisition result, which rechecks policy and scheduling reason). Never call push endpoints and never partially parse an oversized body.
 - [ ] **Step 5:** Run and commit exactly as Task 5's Appendix C row.
 
-### Task 6: Four-slot scheduler and operational administration
+### Task 6: Serial poll loop and operational administration
 
 **Files:** Create `core/src/logical/scheduler.ts`,
 `core/test/logical-scheduler.test.ts`, `core/test/logical-admin-api.test.ts`;
@@ -290,6 +308,13 @@ GET  /admin/sources/:sourceId/runs?before=&limit=
 GET  /admin/acquisition-runs/:runId/jobs?before=&limit=
 ```
 
+The refresh route composes the house `jsonWrite` bodyLimit guard positionally
+(`jsonWrite = bodyLimit({ maxSize: MAX_JSON_BYTES })`, `core/src/api/app.ts:65`)
+like every other authed JSON write. The command ID travels only as the
+`commandId` JSON body field — the Vertical 1 command-ledger convention; there
+is no idempotency header — and the request fingerprint inputs are exactly
+`[command, sourceId, actor]`.
+
 They return `AdminRefreshResult`, `AdminAcquisitionRun`, or
 `AdminOperationalPage<AdminRunProjection|AdminReconciliationJobSummary>`.
 Acquisition counters are exactly candidates/seen/observed/unchanged/skipped/
@@ -297,8 +322,8 @@ omitted/itemsTruncated/bodyLimitExceeded/notModified. Reconciliation counters
 are reconciled/conflicted/pending/processing/retrying/failed plus both
 failed-category counts.
 
-- [ ] **Step 1:** Add red scheduler tests for four slots, `(nextPollAt,sourceId)`, reasons at claim/commit, same-run higher-fence recovery, manual join, later run during old reconciliation, completion-based polling, shared backoff, pause/block invalidation, and startup without catch-up burst.
-- [ ] **Step 2:** Add Hono route tests for exact neutral 404, 409 fingerprint conflict, created/joined/replayed disposition, zero-job terminal response, five-second 200/202, immutable pagination tuples, admin-only matrix, and secret/fence redaction.
+- [ ] **Step 1:** Add red scheduler tests for one global serial loop in stable `sourceId` order, skip-if-recent on durable `lastPollAt` versus `RSC_POLL_SECONDS`, the per-source in-process in-flight boolean (a second acquisition is refused while one is active; an administrator command during flight associates with the active run instead of a second fetch; a crash clears the flag and startup begins with no active acquisitions), commit-time policy and scheduling-reason recheck rejecting stale results, a later run starting while an older run still has pending or retrying jobs, consecutive-failure counting with backoff deferred (`ponytail: single-lane poll + skip-if-recent; add backoff/slots only when a real feed misbehaves or feed count grows`), pause/block invalidation, manual refresh updating the same durable health, and startup running the same loop without a catch-up burst.
+- [ ] **Step 2:** Add Hono route tests for the `jsonWrite` composition on the refresh route, `commandId` accepted only as the JSON body field, exact neutral 404, 409 idempotency conflict when a reused command ID varies command, source, or actor, created/joined/replayed disposition, zero-job terminal response, five-second 200/202, immutable pagination tuples, admin-only matrix, secret redaction, and no push-capability field in any admin projection.
 - [ ] **Step 3:** Run `npm test -w core -- logical-scheduler logical-admin-api`; expect FAIL.
 - [ ] **Step 4:** Implement scheduler and routes using Vertical 1 authorization/ledger patterns. Do not add evidence-review endpoints.
 - [ ] **Step 5:** Run and commit exactly as Task 6's Appendix C row.
@@ -310,11 +335,11 @@ failed-category counts.
 `core/test/logical-presentation.test.ts`; modify `core/src/logical/store.ts`.
 
 **Interfaces:** Consumes `resolveInitialParent(tx, ...)` inside the same job
-transaction. Produces the single 60-second fenced worker, pure comparators,
+transaction. Produces the in-process serial drain, pure comparators,
 convergence, publisher names, and presentation.
 
-- [ ] **Step 1:** Add red worker tests for one-at-a-time claims, 16-row window, eight operational failures, 5s exponential retry, lost fence, supersession, separate failure bookkeeping, version serialization, and immutable terminal runs.
-- [ ] **Step 2:** Add red domain tests for exact convergence keys, local-first lookup, isolated conflicts, mode-neutral claims, four evidence levels, current strongest-level stability, complete arrival/lexical ties, publisher naming normalization/ranking/reset, and per-delivery watermark/rollback/arrival fallback.
+- [ ] **Step 1:** Add red worker tests for the serial one-job-at-a-time drain in `(nextAttemptAt, jobId)` order, drain after each acquisition commit plus a startup drain of pending/retrying jobs, the `min(5s * 2^(attempt-1), 15 min)` retry formula with eight-failure exhaustion, commit-time policy-generation verification, supersession consuming no attempt, separate failure bookkeeping, version serialization in first-arrival order, and immutable terminal runs.
+- [ ] **Step 2:** Add red domain tests for exact convergence keys, local-first lookup, isolated conflicts, mode-neutral claims, three evidence levels, current strongest-level stability, complete arrival/lexical ties, publisher naming normalization/ranking/reset, and per-delivery watermark/rollback/arrival fallback.
 - [ ] **Step 3:** Run `npm test -w core -- logical-reconcile logical-presentation`; expect FAIL.
 - [ ] **Step 4:** Implement one bounded transaction per job; all logical effects, hints, journal records, job state, and counters commit together. Reads remain authority and never repair hints.
 - [ ] **Step 5:** Run and commit exactly as Task 7's Appendix C row.
@@ -345,7 +370,7 @@ and deleted target exclusion.
 **Interfaces:** Produces `/timeline`, `GET /post/:id`, thread, revisions, and
 existing feed branches returning exact model-v2 envelopes.
 
-- [ ] **Step 1:** Add red projector tests using stale hints for exact DTO bounds, local echo classification, root-only river filters before LIMIT, activity author/publisher replies, Personal support, Federated any-approved support, immutable ordering/cursors, counts, and deterministic selection.
+- [ ] **Step 1:** Add red projector tests using stale hints for exact DTO bounds, boolean `classification.personal`/`classification.federated` (no per-item source-ID arrays; local items always `federated: false`), local echo classification, root-only river filters before LIMIT, activity author/publisher replies, Personal from current membership, Federated from any approved source, query-time `directReplyCount`/`conversationReplyCount` derived in the read snapshot with no stored counts, immutable ordering/cursors, and deterministic selection. Provenance assertions check membership, not exhaustive enum equality — Vertical 4 widens `updatedAtProvenance` with `legacy_unknown` at cutover.
 - [ ] **Step 2:** Add route tests for strict selector parsing, exact invalid lens/cursor responses, single-item 200/404, snapshot cursors, history selected-chain rules, and v1/v2 branch rejection.
 - [ ] **Step 3:** Add feed tests: firehose local replies, local-author replies, direct-only comments, no publisher feed, no placeholders, and central policy projection.
 - [ ] **Step 4:** Run the three focused suites; expect FAIL. Implement batched snapshot reads and routes without ordinary writes.
@@ -357,10 +382,10 @@ existing feed branches returning exact model-v2 envelopes.
 **Files:** Create `core/test/logical-policy-events.test.ts`; modify Vertical 1
 source command module, `core/src/domain/service.ts`, `core/src/logical/store.ts`.
 
-**Interfaces:** Produces exact generation/reset rules and deduplicated reply,
-parent, and root journal effects.
+**Interfaces:** Produces exact generation/reset rules and the single
+per-reply journal effect (no fan-out to other items).
 
-- [ ] **Step 1:** Add red tests for governance/federation/mode generation+reset, pause/resume no reset, subscription/follow/profile reset rules, no-op/replay, publisher label reset, bounded reply parent/root upserts, content-edit no count effect, and reset-only adoption/account/source-wide changes.
+- [ ] **Step 1:** Add red tests for governance/federation/mode generation+reset, pause/resume no reset, subscription/follow/profile reset rules, no-op/replay, publisher label reset, exactly one journal effect per bounded reply mutation (the reply's own upsert/remove — no parent upsert, no root upsert, no reset fallback), content-edit no count effect, and reset-only adoption/account/source-wide changes.
 - [ ] **Step 2:** Run `npm test -w core -- logical-policy-events`; expect FAIL.
 - [ ] **Step 3:** Insert journal append calls inside the existing Vertical 1/local transactions; never append after commit or perform fan-out.
 - [ ] **Step 4:** Run and commit exactly as Task 10's Appendix C row.
@@ -371,10 +396,10 @@ parent, and root journal effects.
 `core/test/logical-runtime.test.ts`; create `core/src/logical/runtime.ts`; modify
 `core/src/api/logical-routes.ts`, `core/src/server.ts`, `core/src/domain/bus.ts`.
 
-**Interfaces:** Produces epoch-qualified SSE `upsert | remove | reset`, buffered
-sequence hints, heartbeat catch-up, and v1/v2 startup isolation.
+**Interfaces:** Produces generation-qualified SSE `upsert | remove | reset`,
+buffered sequence hints, heartbeat catch-up, and v1/v2 startup isolation.
 
-- [ ] **Step 1:** Add red SSE tests for query-to-header cursor seed, missing/invalid reset-close, stored/synthesized reset IDs, floor overrun, listener-before-replay, coalesced hints, heartbeat comments, send-time projection, and no placeholder events.
+- [ ] **Step 1:** Add red SSE tests for query-to-header cursor seed, missing/invalid reset-close, stored/synthesized reset IDs, unknown/stale/older-generation cursors emitting exactly one reset then closing, listener-before-replay, coalesced hints, heartbeat comments, send-time projection attaching the `replyCounts` overlay (root ID plus authoritative ordinary-visible conversation count from the same projection snapshot) exactly when a resolved reply's bounded mutation changed its root's count, orphan adoption and policy barriers riding their single reset with no overlay, and no placeholder events.
 - [ ] **Step 2:** Add runtime tests proving configured v2 fails closed before
   this task's complete runtime exists; disabled starts legacy poll/push; enabled
   installs neither; journal/projector/scheduler/reconciliation/orphan instances
@@ -396,10 +421,11 @@ following, post, history, thread proxy, feed proxy, and stream proxy files.
 **Interfaces:** Consumes exact v2 envelopes; produces capability/model validation,
 shared semantic rendering, publisher page, and sorted live upsert/remove/reset.
 
-- [ ] **Step 1:** Add red API tests for discriminated capabilities, exact envelope validation, single item, lenses, malformed fail-closed, and v1 isolation.
-- [ ] **Step 2:** Add red live/proxy tests for opaque cursor forwarding/header precedence, upsert-only rendering, remove/reset passthrough, malformed close/revalidate, reset SSR reconnect, immutable insertion, river reply exclusion, and parent/root authoritative counts.
+- [ ] **Step 1:** Add red API tests for discriminated capabilities, exact envelope validation, single item, lenses, and v1 isolation — with the failure carve as two tests: a capability fetch failure (unreachable, non-200, or throw) degrades to the legacy path for that request only, retries capability on the next request, and memoizes only success (never a sticky failure); a successful v2 capability followed by a missing/malformed/mismatched envelope fails closed — discard, close, revalidate — never falling back to v1.
+- [ ] **Step 2:** Add red live/proxy tests for opaque cursor forwarding/header precedence, upsert-only rendering, remove/reset passthrough, malformed close/revalidate, reset SSR reconnect, immutable insertion, river reply exclusion (a resolved-reply frame never inserts a card and never materializes an off-page parent or root), and the `replyCounts` overlay: replace a loaded root card's conversation count with the frame's authoritative value, do nothing otherwise, never increment or decrement optimistically, and applying the same frame twice is idempotent.
 - [ ] **Step 3:** Add page tests for both feature states, publisher 404/empty descriptor, local `/u`, root-only rivers, activity replies, thread placeholders, history sanitizer, and no publisher follow.
 - [ ] **Step 4:** Run `npm test -w web`; expect focused failures. Implement capability branches without casting between models.
+- [ ] **Step 4a:** Update Vertical 1's exact-equality capability test (`toEqual({sourceModelV2: true})`) and widen the V1 web capability type to carry `model`, `journalCursorVersion`, and `streamProtocolVersion` — an intentional supersession (spec §5.6, review C5). The staged `web/src/lib/api.ts`/`web/src/lib/types.ts` paths carry this edit.
 - [ ] **Step 5:** Run and commit exactly as Task 12's Appendix C row.
 
 ### Task 13: Operational admin Web and whole-vertical gate
@@ -414,7 +440,7 @@ create `core/test/logical-vertical.test.ts`.
 Vertical 2 boundary.
 
 - [ ] **Step 1:** Add admin Web tests for command ID retention, neutral refusal, 200 terminal versus success, 202 polling, health/nonterminal runs, pagination, quarantined labeling, and absence of evidence-review links.
-- [ ] **Step 2:** Add integration tests for first activation, continuous restart, disabled interval/reactivation, scheduler-to-observation-to-job-to-projection-to-journal, crash fences, local/remote convergence, and every cross-model isolation rule.
+- [ ] **Step 2:** Add integration tests for first activation, continuous restart, disabled interval/reactivation, scheduler-to-observation-to-job-to-projection-to-journal, crash recovery (the in-flight flag clears with the process; the startup drain picks up pending/retrying jobs), local/remote convergence, and every cross-model isolation rule.
 - [ ] **Step 3:** Run `npm test -w web -- source-detail`; expect FAIL with the
   absent admin logical API. Implement only the run/status
   functions in `web/src/lib/logical-api.ts`, the two run page files, the
@@ -435,7 +461,7 @@ logical_activation_v2(
  singleton INTEGER PRIMARY KEY CHECK(singleton=1), schema_version INTEGER NOT NULL CHECK(schema_version=1),
  state TEXT NOT NULL CHECK(state IN('never_activated','active','reconciliation_required')),
  last_activated_at TEXT, last_reconciled_at TEXT)
-logical_journal_meta_v2(singleton INTEGER PRIMARY KEY CHECK(singleton=1),epoch TEXT NOT NULL,high_water_seq INTEGER NOT NULL,replay_floor_seq INTEGER NOT NULL)
+logical_journal_meta_v2(singleton INTEGER PRIMARY KEY CHECK(singleton=1),high_water_seq INTEGER NOT NULL,reset_generation INTEGER NOT NULL)
 logical_journal_v2(sequence INTEGER PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN('upsert','remove','reset')),logical_item_id TEXT,change_mask INTEGER NOT NULL,created_at TEXT NOT NULL)
 remote_publishers_v2(id TEXT PRIMARY KEY,canonical_feed_url TEXT UNIQUE,identity_level TEXT NOT NULL CHECK(identity_level IN('feed_anchored','source_scoped_fallback')),created_at TEXT NOT NULL)
 publisher_names_v2(id TEXT PRIMARY KEY,publisher_id TEXT NOT NULL REFERENCES remote_publishers_v2(id),source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),observation_version_id TEXT NOT NULL,evidence_level TEXT NOT NULL,normalized_name TEXT,first_seen_at TEXT NOT NULL,effective INTEGER NOT NULL CHECK(effective IN(0,1)))
@@ -448,16 +474,24 @@ observation_versions_v2(id TEXT PRIMARY KEY,delivery_id TEXT NOT NULL REFERENCES
 presentation_entries_v2(delivery_id TEXT NOT NULL REFERENCES deliveries_v2(id),sequence INTEGER NOT NULL,observation_version_id TEXT NOT NULL UNIQUE REFERENCES observation_versions_v2(id),effective_updated_at TEXT,provenance TEXT CHECK(provenance IN('explicit','arrival')),material_fingerprint TEXT NOT NULL,PRIMARY KEY(delivery_id,sequence))
 publisher_claims_v2(id TEXT PRIMARY KEY,logical_item_id TEXT NOT NULL REFERENCES logical_items_v2(id),publisher_id TEXT NOT NULL REFERENCES remote_publishers_v2(id),source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),observation_version_id TEXT NOT NULL REFERENCES observation_versions_v2(id),evidence_level TEXT NOT NULL,first_seen_at TEXT NOT NULL)
 logical_conflicts_v2(id TEXT PRIMARY KEY,logical_item_id TEXT REFERENCES logical_items_v2(id),observation_version_id TEXT REFERENCES observation_versions_v2(id),kind TEXT NOT NULL,evidence_json TEXT NOT NULL,created_at TEXT NOT NULL)
-orphan_work_v2(id TEXT PRIMARY KEY,alias_kind TEXT NOT NULL,alias_key TEXT NOT NULL,candidate_high_water TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN('pending','processing','complete')),fence INTEGER NOT NULL,lease_until TEXT,created_at TEXT NOT NULL)
-acquisition_runs_v2(id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),reason TEXT NOT NULL CHECK(reason IN('scheduled','administrator_refresh')),status TEXT NOT NULL CHECK(status IN('processing','terminal')),started_at TEXT NOT NULL,acquisition_committed_at TEXT,completed_at TEXT,outcome TEXT NOT NULL,counters_json TEXT NOT NULL,failure_category TEXT,diagnostic TEXT)
+orphan_work_v2(id TEXT PRIMARY KEY,alias_kind TEXT NOT NULL,alias_key TEXT NOT NULL,candidate_high_water TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN('pending','processing','complete')),created_at TEXT NOT NULL)
+acquisition_runs_v2(id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),reason TEXT NOT NULL CHECK(reason IN('scheduled','administrator_refresh')),status TEXT NOT NULL CHECK(status IN('processing','terminal')),started_at TEXT NOT NULL,acquisition_committed_at TEXT,completed_at TEXT,outcome TEXT NOT NULL,counters_json TEXT NOT NULL,failure_category TEXT,diagnostic TEXT,push_capability_json TEXT)
 acquisition_commands_v2(actor_id TEXT NOT NULL,command_id TEXT NOT NULL,request_fingerprint TEXT NOT NULL,run_id TEXT REFERENCES acquisition_runs_v2(id),refusal_json TEXT,created_at TEXT NOT NULL,PRIMARY KEY(actor_id,command_id))
-acquisition_claims_v2(source_id TEXT PRIMARY KEY REFERENCES remote_sources_v2(id),run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),fence INTEGER NOT NULL,claimed_at TEXT NOT NULL,lease_until TEXT NOT NULL)
-source_health_v2(source_id TEXT PRIMARY KEY REFERENCES remote_sources_v2(id),next_poll_at TEXT,last_attempt_at TEXT,last_success_at TEXT,last_failure_at TEXT,consecutive_failures INTEGER NOT NULL)
+source_health_v2(source_id TEXT PRIMARY KEY REFERENCES remote_sources_v2(id),last_poll_at TEXT,last_success_at TEXT,last_failure_at TEXT,consecutive_failures INTEGER NOT NULL)
 source_validators_v2(source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),effective_url TEXT NOT NULL,etag TEXT,last_modified TEXT,PRIMARY KEY(source_id,effective_url))
 redirect_observations_v2(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),ordinal INTEGER NOT NULL,status INTEGER,from_evidence TEXT NOT NULL,to_evidence TEXT NOT NULL,permanent_proof INTEGER NOT NULL CHECK(permanent_proof IN(0,1)))
 acquisition_findings_v2(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),kind TEXT NOT NULL,evidence_json TEXT NOT NULL,created_at TEXT NOT NULL)
-reconciliation_jobs_v2(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),observation_version_id TEXT NOT NULL UNIQUE REFERENCES observation_versions_v2(id),status TEXT NOT NULL CHECK(status IN('pending','processing','retrying','reconciled','conflicted','failed')),attempts INTEGER NOT NULL,next_attempt_at TEXT NOT NULL,fence INTEGER NOT NULL,lease_until TEXT,failure_category TEXT,diagnostic TEXT,created_at TEXT NOT NULL)
+reconciliation_jobs_v2(id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES acquisition_runs_v2(id),observation_version_id TEXT NOT NULL UNIQUE REFERENCES observation_versions_v2(id),status TEXT NOT NULL CHECK(status IN('pending','processing','retrying','reconciled','conflicted','failed')),attempts INTEGER NOT NULL,next_attempt_at TEXT NOT NULL,failure_category TEXT,diagnostic TEXT,created_at TEXT NOT NULL)
 ```
+
+Two additive obligations from the cutover spec ride the same migration:
+`acquisition_runs_v2.push_capability_json` is the nullable parse-time
+push-capability evidence (cutover spec §9, review WP4) — written inert by V2,
+validated only by Vertical 3, exposed by no admin projection. And
+`remote_sources_v2` gains source-scoped
+`policy_generation INTEGER NOT NULL DEFAULT 0` via additive `ALTER TABLE`
+(cutover spec §10.2): Appendix B transitions advance it and reconciliation
+rechecks it at commit time.
 
 Required indexes are:
 
@@ -546,13 +580,15 @@ expect(run.omitted).toBe(1)
 
 // core/test/logical-admin-api.test.ts
 const first = await adminApp.request('/admin/sources/s1/refresh', {
-  method:'POST', headers:{'Idempotency-Key':'c1','content-type':'application/json'}, body:'{}'
+  method:'POST', headers:{'content-type':'application/json'}, body:'{"commandId":"c1"}'
 })
 expect(await first.json()).toMatchObject({model:'logical-v2',disposition:'created',status:'processing'})
-const changed = await adminApp.request('/admin/sources/s1/refresh', {
-  method:'POST', headers:{'Idempotency-Key':'c1','content-type':'application/json'}, body:'{"extra":true}'
+// same commandId, different source: fingerprint [command, sourceId, actor] mismatches
+const changed = await adminApp.request('/admin/sources/s2/refresh', {
+  method:'POST', headers:{'content-type':'application/json'}, body:'{"commandId":"c1"}'
 })
 expect(changed.status).toBe(409)
+expect(await changed.json()).toEqual({model:'logical-v2',error:'idempotency conflict'})
 
 // core/test/logical-runtime.test.ts
 expect(() => compose({sourceModelV2:true,runtime:null})).toThrow('logical-v2 runtime unavailable')
@@ -563,5 +599,7 @@ expect(order).toEqual(['journal','projector','scheduler','reconcile','orphan','a
 
 Every mutation fault test repeats the first pattern with throws immediately
 before audit, journal, ledger, and commit. Every HTTP test uses Hono
-`app.request`; every Web test supplies both capability branches and asserts a
-model mismatch rejects instead of falling back.
+`app.request`; every Web test supplies both capability branches with the C1
+carve: a capability fetch failure degrades to the legacy path for that request
+and memoizes only success, while a model mismatch after a successful v2
+capability rejects and revalidates instead of falling back.
