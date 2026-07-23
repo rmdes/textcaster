@@ -16,7 +16,18 @@ through a one-to-one bridge.
 **Tech Stack:** Node 22 native TypeScript, Hono, better-sqlite3/Kysely,
 feedsmith, Vitest, SvelteKit 2, Svelte 5.
 
-**Revision:** 5 — folds the V3 plan review's cross-plan items
+**Revision:** 6 — folds the V4 plan review's lockstep items
+(`docs/superpowers/reviews/2026-07-22-v4-migration-spec-review.md`, section
+"PLAN REVIEW (2026-07-23): V4 plan draft dual pass → V4 rev 2 + V2 rev 6
+instructions"). Scope: the `presentation_entries_v2.provenance` CHECK is
+created three-wide (V4's conversion provenance — a CHECK is un-widenable
+post-creation, so it must land before V2 executes; V2's own writes stay
+two-valued); both stale validated-by-Vertical-3 pointers (Task 4 Step 1b,
+Appendix A) now read Vertical 4 — push left V3 entirely; and the
+`push_capability_json` `{mode,endpoint,topic}` shape comment beside the
+column (non-blocking pin). Nothing else.
+
+Revision 5 folded the V3 plan review's cross-plan items
 (`docs/superpowers/reviews/2026-07-22-v3-moderation-spec-review.md`, section
 "PLAN REVIEW (2026-07-23): V3 plan draft dual pass → V3 rev 2 + V2 rev 5
 instructions"). The three lockstep items are applied directly here — not left
@@ -74,7 +85,7 @@ C1 capability-failure carve, the C2 `jsonWrite` pin, the C3 request-fingerprint
 pin, the C5 V1 capability-test supersession, the WP4 inert push-capability
 column, and the source-scoped `policy_generation` column.
 
-**Status:** Plan review folded (rev 4) + V3 lockstep fold (rev 5); READY for implementation — execution remains gated on the roadmap's all-four-plans + final cross-vertical review gate.
+**Status:** Plan review folded (rev 4) + V3 lockstep fold (rev 5) + V4 lockstep fold (rev 6); READY for implementation — execution remains gated on the roadmap's all-four-plans + final cross-vertical review gate.
 
 ## Global Constraints
 
@@ -337,7 +348,7 @@ proven permanent-chain targets travelling as `CommitAcquisitionInput.aliases`.
   omitted even when earlier candidates were skipped.
 - [ ] **Step 1b:** Add an isolation test that a feed advertising WebSub/rssCloud
   records only the inert parse-time push-capability evidence on its run row
-  (nullable `push_capability_json`, validated by Vertical 3), persists no
+  (nullable `push_capability_json`, validated by Vertical 4), persists no
   WebSub/rssCloud subscription or claim, and calls no push endpoint.
 - [ ] **Step 1c:** Add red alias-writer tests (rev 5, RC1; spec §1.6): an
   uninterrupted 301/308 chain from the canonical URL or an already-owned
@@ -554,7 +565,7 @@ logical_deleted_local_v2(logical_item_id TEXT PRIMARY KEY REFERENCES logical_ite
 logical_identity_keys_v2(kind TEXT NOT NULL,key TEXT NOT NULL,logical_item_id TEXT NOT NULL REFERENCES logical_items_v2(id),PRIMARY KEY(kind,key))
 deliveries_v2(id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),key_kind TEXT NOT NULL,key TEXT NOT NULL,first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,last_seen_run_id TEXT NOT NULL,seen_count INTEGER NOT NULL,UNIQUE(source_id,key_kind,key))
 observation_versions_v2(id TEXT PRIMARY KEY,delivery_id TEXT NOT NULL REFERENCES deliveries_v2(id),fingerprint_version INTEGER NOT NULL,fingerprint TEXT NOT NULL,canonical_material BLOB NOT NULL,arrival_at TEXT NOT NULL,run_id TEXT NOT NULL,wire_ordinal INTEGER NOT NULL,last_seen_at TEXT NOT NULL,last_seen_run_id TEXT NOT NULL,seen_count INTEGER NOT NULL,raw_evidence_json TEXT NOT NULL,normalized_json TEXT NOT NULL,UNIQUE(delivery_id,fingerprint_version,fingerprint))
-presentation_entries_v2(delivery_id TEXT NOT NULL REFERENCES deliveries_v2(id),sequence INTEGER NOT NULL,observation_version_id TEXT NOT NULL UNIQUE REFERENCES observation_versions_v2(id),effective_updated_at TEXT,provenance TEXT CHECK(provenance IN('explicit','arrival')),material_fingerprint TEXT NOT NULL,PRIMARY KEY(delivery_id,sequence))
+presentation_entries_v2(delivery_id TEXT NOT NULL REFERENCES deliveries_v2(id),sequence INTEGER NOT NULL,observation_version_id TEXT NOT NULL UNIQUE REFERENCES observation_versions_v2(id),effective_updated_at TEXT,provenance TEXT CHECK(provenance IN('explicit','arrival','legacy_unknown')),material_fingerprint TEXT NOT NULL,PRIMARY KEY(delivery_id,sequence))
 publisher_claims_v2(id TEXT PRIMARY KEY,logical_item_id TEXT NOT NULL REFERENCES logical_items_v2(id),publisher_id TEXT NOT NULL REFERENCES remote_publishers_v2(id),source_id TEXT NOT NULL REFERENCES remote_sources_v2(id),observation_version_id TEXT NOT NULL REFERENCES observation_versions_v2(id),evidence_level TEXT NOT NULL,first_seen_at TEXT NOT NULL)
 logical_conflicts_v2(id TEXT PRIMARY KEY,logical_item_id TEXT REFERENCES logical_items_v2(id),observation_version_id TEXT REFERENCES observation_versions_v2(id),kind TEXT NOT NULL,evidence_json TEXT NOT NULL,created_at TEXT NOT NULL)
 orphan_work_v2(id TEXT PRIMARY KEY,alias_kind TEXT NOT NULL,alias_key TEXT NOT NULL,candidate_high_water TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN('pending','processing','complete')),created_at TEXT NOT NULL)
@@ -571,7 +582,14 @@ reconciliation_jobs_v2(id TEXT PRIMARY KEY,kind TEXT NOT NULL DEFAULT 'observati
 Two additive obligations from the cutover spec ride the same migration:
 `acquisition_runs_v2.push_capability_json` is the nullable parse-time
 push-capability evidence (cutover spec §9, review WP4) — written inert by V2,
-validated only by Vertical 3, exposed by no admin projection. And
+validated only by Vertical 4, exposed by no admin projection; the stored
+value is `JSON.stringify` of the `choosePushTarget` result shape —
+`{mode:'websub'|'rsscloud', endpoint:string, topic:string}` — or SQL NULL
+when the feed advertises nothing (rev 6 shape pin). The third `provenance`
+value in `presentation_entries_v2` is likewise the cutover spec's (V4
+lockstep amendment, rev 6): only V4's legacy conversion writes it — V2's own
+writes stay two-valued, and Task 8 Step 1's membership (not equality)
+provenance assertions already anticipate the widening. And
 `remote_sources_v2` gains source-scoped
 `policy_generation INTEGER NOT NULL DEFAULT 0` via additive `ALTER TABLE`
 (cutover spec §10.2): Appendix B transitions advance it and reconciliation

@@ -21,7 +21,30 @@ idiom, no rollback machinery beyond the pre-flip backup.
 **Tech Stack:** Node 22 native TypeScript, Hono, better-sqlite3/Kysely,
 feedsmith, Vitest, SvelteKit 2, Svelte 5.
 
-**Revision:** 1 — initial draft against spec rev 1
+**Revision:** 2 — folds the dual plan review (correctness FC1-5 + ponytail
+PT1-5; adjudications in
+`docs/superpowers/reviews/2026-07-22-v4-migration-spec-review.md`, section
+"PLAN REVIEW (2026-07-23): V4 plan draft dual pass → V4 rev 2 + V2 rev 6
+instructions"). All five risky calls were upheld (the two-column marker with
+its inline dev-reset note; no-FK reservations + repo-layer guard as
+root-cause placement; the push CASCADE; the 202 in-flight discard; the
+token-only ops route — with its over-strong spec citation trimmed).
+Applied: **FC1 — former lockstep amendment 1 is DELETED, not relocated**:
+push provenance takes the additive path — a nullable V4-owned mechanism
+column on `acquisition_runs_v2` added by this plan's own tail migration
+(Appendix A; Tasks 1/3) — so the plan-invented reason value is gone
+everywhere and `acquisition_runs_v2.reason` keeps V2's two values; FC2
+(Task 6 pins the synthetic observation-evidence contract); FC3+PT1 (former
+amendment 3 reframed as a NON-BLOCKING shape pin and removed from the
+refuse-execution set; defensive-parse wording deduped into Task 2; the
+stale-pointer directive deduped into Task 12, naming both V2 occurrences
+per FC4); FC5 (the ops-route example now byte-matches spec §6's binding
+block); PT2 (Task 10 Step 2 asserts composition only); PT3 (Appendix D
+trimmed to the push column loop + the two tripwire matchers); PT4
+(Appendix B's integration-points table deleted; its fault-injection
+directive moved into Task 8).
+
+Revision 1 was the initial draft against spec rev 1
 (`docs/superpowers/specs/2026-07-22-rsc-migration-cutover-design.md`). The
 spec's settled decisions (one-transaction conversion inside V2's pre-listen
 activation; startup-error flip-back; two-state push runtime with
@@ -30,16 +53,15 @@ gate-assertion off-flag coverage; run-claim on `acquisition_runs_v2`; no
 post-purge reservation branch; the active-without-marker tripwire) are
 **do-not-relitigate**.
 
-**Status:** Draft — awaiting the standing plan review, then the Task 12
-cross-vertical contract review. Execution of Tasks 1–10 is gated on V1–V3
-being implemented and reviewed; Task 11 is a separate post-soak release;
-Task 12 executes FIRST in wall-clock order (it gates every vertical's
-implementation).
+**Status:** READY — gated on the Task 12 cross-vertical contract review.
+Execution of Tasks 1–10 is gated on V1–V3 being implemented and reviewed;
+Task 11 is a separate post-soak release; Task 12 executes FIRST in
+wall-clock order (it gates every vertical's implementation).
 
 ## Global Constraints
 
 - Governing spec: `docs/superpowers/specs/2026-07-22-rsc-migration-cutover-design.md` rev 1. Foundation: `2026-07-20-rsc-source-governance-moderation-design.md` rev 3 + its two 2026-07-22 amendments.
-- Prerequisites: V1 plan rev 5, V2 plan rev 5 **plus the three V2 rev 6 lockstep amendments below**, and V3 plan rev 2, all implemented and reviewed. Refuse execution if any amendment did not land in V2's execution.
+- Prerequisites: V1 plan rev 5, V2 plan rev 6 (rev 5 **plus the lockstep provenance-CHECK amendment below**), and V3 plan rev 2, all implemented and reviewed. Refuse execution only if that amendment did not land in V2's execution — it is the one genuinely blocking item (a CHECK cannot be widened post-creation); the shape pin below is non-blocking.
 - `RSC_SOURCE_MODEL_V2` stays startup-immutable, default off. With v2 off no V4 route, worker, or write path is active; legacy behavior — including legacy push-in — is byte-identical and covered by the existing legacy suites (spec rev 1 WP1/WP3: no duplicated legacy suite, no third/fourth push state).
 - **No new environment variable for push**: v2 inbound push is effective exactly when `RSC_PUSH_IN=on` and `RSC_PUBLIC_URL` is set — the existing `pushInEffective` rule (`core/src/domain/push-in.ts:48-50`, `core/src/config.ts:60-62`). The only new variable is `RSC_MIGRATION_MANIFEST` (optional manifest path, Task 4).
 - **No new scheduling loop**: registration rides the poll pass after each successful acquisition commit; one renewal sweep plus expired-row purge ends each pass, exactly as v1's `runPollCycle` does today (`push-in.ts:271-272`).
@@ -51,38 +73,34 @@ implementation).
 - Stage explicit paths only. Every commit ends with `developed with the help of AI tools`.
 - Test commands follow `docs/superpowers/documentation/TESTING.md`: in-container when the dev stack is running, otherwise host commands as written.
 
-## Lockstep amendments to the V2 plan (rev 6, REQUIRED before any execution)
+## Lockstep amendment to the V2 plan (rev 6, REQUIRED before any execution)
 
 Same mechanism as the V4 §10 CHECK pin (amending V1 rev 5) and V3's three
-amendments (applied in V2 rev 5). SQLite cannot widen a CHECK or relax a
-column without a table rebuild, so these must land in V2's plan **before V2
-executes**; the Task 12 review folds them and re-verifies. This plan refuses
-execution if V2's executed revision predates them.
+amendments (applied in V2 rev 5). SQLite cannot widen a CHECK without a
+table rebuild, so this must land in V2's plan **before V2 executes**; the
+Task 12 review re-verifies it. This plan refuses execution if V2's executed
+revision predates it.
 
-1. **`acquisition_runs_v2.reason` CHECK is created WIDE.** V2's Appendix A
-   pins `CHECK(reason IN('scheduled','administrator_refresh'))`, but spec
-   §1.4 routes push ingestion through the same acquisition path: a fat-ping
-   body commits as a run (`observation_versions_v2.run_id` is `NOT NULL`)
-   and a thin ping triggers a one-shot run. The CHECK becomes
-   `IN('scheduled','administrator_refresh','push_delivery','push_ping')`;
-   V2's TS `AcquisitionReason` union stays narrow (V2 writes only the first
-   two) and V4 widens the TS union at consumption — the same
-   wide-CHECK/narrow-enum pattern as the V4 §10 pin.
-2. **`presentation_entries_v2.provenance` CHECK is created WIDE.** V2's
+1. **`presentation_entries_v2.provenance` CHECK is created WIDE.** V2's
    Appendix A pins `CHECK(provenance IN('explicit','arrival'))`, but spec
    §3.2 converts legacy revisions with provenance `legacy_unknown`. The
    CHECK becomes `IN('explicit','arrival','legacy_unknown')`; V2's TS
    provenance type stays two-valued until V4's declared wire widening
    (spec §10 item 6 — V2's provenance tests already assert membership, not
    exhaustive equality).
-3. **`push_capability_json` shape is pinned.** V2 writes it inert; V4 is its
-   only reader. The stored value is `JSON.stringify` of the
-   `choosePushTarget` result shape — `{mode:'websub'|'rsscloud',
-   endpoint:string, topic:string}` — or SQL NULL when the feed advertises
-   nothing. (Also fix the stale pointer in V2 Appendix A: the column is
-   "validated only by Vertical **4**", not 3 — push left V3 entirely.)
-   V4 parses defensively regardless: a malformed value is treated as
-   no-capability plus one log line, never a crash.
+
+**Non-blocking shape pin**, folded into V2 rev 6 alongside the amendment but
+NOT part of the refuse-execution set: `push_capability_json` (written inert
+by V2; V4 is its only reader) stores `JSON.stringify` of the
+`choosePushTarget` result shape — `{mode:'websub'|'rsscloud',
+endpoint:string, topic:string}` — or SQL NULL when the feed advertises
+nothing. Any stored shape is forward-safe regardless (Task 2's defensive
+parser), which is why this pin cannot block execution.
+
+There is no reason-CHECK amendment: push provenance needs no enum widening.
+This plan's own tail migration records it additively on `acquisition_runs_v2`
+(Appendix A), and fat/thin ping runs use the existing V2 reason vocabulary
+per spec §1.4.
 
 ## File map and shared interfaces
 
@@ -122,7 +140,7 @@ export interface PushSummary {
 
 ```ts
 export type PushClaim = PushTarget // {mode: PushProtocol; endpoint: string; topic: string} — reused from push-in.ts
-export function parsePushCapability(json: string | null): PushClaim | null // defensive; malformed → null + log
+export function parsePushCapability(json: string | null): PushClaim | null // contract pinned in Task 2 Step 1
 export interface PushRowV2 {
   id: string; sourceId: string; mode: PushProtocol; endpoint: string; topic: string
   callbackToken: string; secret: string | null
@@ -186,17 +204,6 @@ export function runConversion(tx: WriteTx, input: {
 }): ConversionCounts // marker + reset written by the caller (runtime), same transaction
 ```
 
-`AcquisitionReason` (V2 type) widens — intentional supersession, mirroring
-V3's `ReconciliationClaim` widening:
-
-```ts
-export type AcquisitionReason =
-  | {kind: 'scheduled'}
-  | {kind: 'administrator'; command: CommandEnvelope}
-  | {kind: 'push_delivery'; body: string; signatureOk: true}  // fat ping — fetch skipped, body is the document
-  | {kind: 'push_ping'}                                        // thin ping — ordinary fetch
-```
-
 ---
 
 ### Task 1: V4 schema, widened TS contracts, and the amendment tripwire
@@ -216,9 +223,11 @@ the shared-interfaces block, and `Config.migrationManifestPath`. No behavior.
   any value outside `('pending','active')` (the two-state pin, spec 1.2) and
   enforces `UNIQUE(source_id, mode)` (mirror of legacy `UNIQUE(user_id,
   mode)`, `core/src/storage/sqlite.ts:618`); **the amendment tripwire** —
-  `acquisition_runs_v2` accepts a `reason='push_delivery'` row and
-  `presentation_entries_v2` accepts `provenance='legacy_unknown'` (proves V2
-  rev 6 amendments 1–2 landed; refuse the task if either needs a rebuild);
+  `presentation_entries_v2` accepts `provenance='legacy_unknown'` (proves
+  the V2 rev 6 amendment landed; refuse the task if it needs a rebuild);
+  `acquisition_runs_v2.delivery_mechanism` exists nullable and accepts
+  `'push'` and NULL (this plan's own tail migration — an additive
+  `ALTER TABLE`, Appendix A; the `reason` CHECK stays V2's two values);
   no existing table is rebuilt (same `sql` text in `sqlite_master`
   before/after — the V3 rev 2 TP5 assertion, reused).
 - [ ] **Step 2:** Add the config red test: `RSC_MIGRATION_MANIFEST` defaults
@@ -228,9 +237,9 @@ the shared-interfaces block, and `Config.migrationManifestPath`. No behavior.
 - [ ] **Step 4:** Append ONE migration entry at the END of `MIGRATIONS`
   calling `installV4Schema(raw)` in `schema.ts` with the exact Appendix A
   DDL. Add the TS widenings (`migration_review`, `operator_token`, `ops`,
-  `SourceSummary.push`/`PushSummary`, `SourceDetail.pushExpiresAt`, the
-  `AcquisitionReason` union, `updatedAtProvenance` gains `'legacy_unknown'`
-  in the wire type) and `Config.migrationManifestPath`.
+  `SourceSummary.push`/`PushSummary`, `SourceDetail.pushExpiresAt`,
+  `updatedAtProvenance` gains `'legacy_unknown'` in the wire type) and
+  `Config.migrationManifestPath`.
 - [ ] **Step 5:** Run `npm test -w core -- v4-schema config && npm run typecheck -w core`; expect PASS. Commit per Appendix C.
 
 ### Task 2: v2 push lifecycle — store, registration, renewal, cadence
@@ -314,10 +323,12 @@ and the admin source-page push block.
   scheduling; unknown token/topic → 404.
 - [ ] **Step 2:** Add red fat-ping tests: unknown token 404; bad/missing HMAC
   → silent 202 + log, never 4xx (v1 H2, `push-in.ts:218-221`;
-  `verifySignature` imported); eligible source → the body enters the same V2
-  acquisition path as a poll (reason `{kind:'push_delivery'}`: §1.5 bounds
-  profile, observation writer, reconciliation jobs, commit-time policy
-  recheck; run row records reason `push_delivery`); a source with an active
+  `verifySignature` imported); eligible source → the delivered body enters
+  the same V2 acquisition path as a poll — fetch skipped, the body is the
+  document — through the §1.5 bounds profile, observation writer,
+  reconciliation jobs, and commit-time policy recheck; the run row uses the
+  existing V2 reason vocabulary (spec §1.4) with `delivery_mechanism='push'`
+  (no new reason value); a source with an active
   in-flight acquisition discards the ping at 202 + log (the per-source
   in-flight boolean; the next poll catches up); **paused or blocked**:
   authenticate, neutral 202, body neither parsed nor stored (assert zero
@@ -326,7 +337,8 @@ and the admin source-page push block.
 - [ ] **Step 3:** Add red thin-ping/challenge tests: unknown topic → neutral
   200 no-op (no subscription-list oracle) and the 30-second per-topic floor
   (`push-in.ts:238-241` shape); known eligible topic → one acquisition run
-  through the ordinary gate, reason `{kind:'push_ping'}`, fire-and-forget;
+  through the ordinary gate — the existing one-shot reason per spec §1.4,
+  run row marked `delivery_mechanism='push'` — fire-and-forget;
   paused/blocked → 200 without fetching; rssCloud challenge confirms known
   topics and 404s unknown ones (`push-in.ts:231-234`). Resume-from-pause
   needs no test of its own machinery: V2 §1.3's ordinary next-pass poll IS
@@ -450,6 +462,17 @@ no delete, no v2 reader touches them.
   run row), one claim, a selected publisher, and a retained preferred
   delivery; preserved exactly: GUID, permalink, content, `content_markdown`,
   published/arrival dates, reply context.
+- [ ] **Step 1a:** Add red synthetic-evidence tests pinning the migration
+  observation's evidence contract: `canonical_material`,
+  `raw_evidence_json`, and `normalized_json` are BUILT from the converted
+  post's fields, wrapped in a marked synthetic envelope (e.g.
+  `{"synthetic":"migration", …}`) — never a fabricated feed document;
+  `wire_ordinal` and the seen counts take defined synthetic values
+  (`wire_ordinal` 0, `seen_count` 1, `last_seen_run_id` `'migration'`,
+  `last_seen_at` = the conversion timestamp). Integrity holds because
+  reconciliation reads `normalized_json` — which IS the correct converted
+  content — and verification fetches live publisher URLs; stored evidence
+  is never re-read as an authenticity proof.
 - [ ] **Step 2:** Add red attribution tests: single-publisher sources select
   the bound publisher; a differing per-item `source_name`/`source_feed_url`
   becomes a `logical_conflicts_v2` row (`attribution_conflict` counted);
@@ -469,7 +492,7 @@ no delete, no v2 reader touches them.
 - [ ] **Step 4:** Add red revision tests: `post_revisions` convert into the
   delivery's accepted presentation chain in `seen_at` order with timestamps
   preserved and provenance **`legacy_unknown`** (accepted by the widened
-  CHECK — V2 rev 6 amendment 2); `legacy_unknown` never initializes or
+  CHECK — the V2 rev 6 amendment); `legacy_unknown` never initializes or
   advances the explicit-update watermark (a later explicit update starts the
   watermark fresh); the wire `updatedAtProvenance` for a converted item
   reads `legacy_unknown` (membership assertion — V2's tests already
@@ -537,7 +560,10 @@ not-found path (spec WP5).
   initialization with its first reset generation, the cutover `reset`, the
   marker (`converted_at` + `conversion_findings_json` per-kind counts),
   activation timestamps, and state `active` — fault injection anywhere
-  before commit leaves a legacy-intact database that retries next start;
+  before commit leaves a legacy-intact database that retries next start
+  (fault-injection tests follow the V2 Appendix D pattern: throw
+  immediately before marker, journal, and commit; assert the legacy tables
+  and the v2 tables are all unchanged);
   marker present → conversion skipped, ordinary V2 §7.1 re-activation;
   conversion runs at most once across restarts.
 - [ ] **Step 2:** Add red tripwire tests: **(a)** marker present +
@@ -580,8 +606,8 @@ inline block is the binding form):
 ```http
 POST /ops/sources/federation
 Authorization: Bearer <RSC_TOKEN>
-{"url":"…","attributionMode":"aggregate","category":"operator_policy",
- "note":"configured peer","commandId":"<uuid>"}
+{"url":"https://example.test/feed","attributionMode":"aggregate",
+ "category":"operator_policy","note":"configured peer","commandId":"<uuid>"}
 ```
 
 - [ ] **Step 1:** Add red contract tests: the route exists only under v2
@@ -598,8 +624,7 @@ Authorization: Bearer <RSC_TOKEN>
   `/admin/*` route** (no better-auth session → `sessionAuth` 401,
   `core/src/api/auth.ts:64-66`, before `requireAdmin`'s 403 at `:82`);
   invalid bearer fails per the existing bearer contract; admin session on
-  this route → this route is token-only (spec: the token's whole surface is
-  this one route; a session request here is refused — pin 401); no raw
+  this route → 401 (bearer-only route, so a session 401s); no raw
   token in any success/error/audit body (the fingerprint only).
 - [ ] **Step 3:** Run `npm test -w core -- source-ops-api`; expect FAIL.
   Implement: hand-rolled validator, `c.json({error}, status)`, the widened
@@ -631,10 +656,13 @@ release later).
   legacy dataset (person + webfeed + manifest-approved instance +
   unconfirmed instance, follows incl. one over-cap user, active + pending +
   expired + invalid push rows, replies with resolved/unresolved parents,
-  revisions), flip on, start: assert one pass through the runbook's step-6
-  checks — capability shape, SSR-projectable converted timeline, same-ID
-  `/post/:id`, reserved-handle redirect data, sane marker counts, preserved
-  push state, fat-ping lease continuity, resumed paced acquisition.
+  revisions), flip on, start: assert **composition only** — one pass through
+  the runbook's step-6 checks composes end to end (capability shape,
+  SSR-projectable converted timeline, same-ID `/post/:id`, reserved-handle
+  redirect data, sane marker counts, preserved push state, fat-ping lease
+  continuity, resumed paced acquisition); field-level correctness of each
+  converted output is already proven by Tasks 5–8 and is not re-asserted
+  here.
 - [ ] **Step 3:** Document: RUNNING.md gains the per-instance runbook (spec
   §8 verbatim: deploy dark → preflight via `cloudron exec npm run preflight
   -w core` → Cloudron backup as THE restore point → flip + restart → verify
@@ -700,9 +728,10 @@ this plan's additions):
   values + `actor_kind` incl. `operator_token` + `command_ledger_v2.actor_scope`
   incl. `ops` (V1 rev 5 Task 1); `item_audit_v2` and
   `blocked_source_tombstones_v2` nine-wide (V3 rev 2 Appendix A);
-  `acquisition_runs_v2.reason` four-wide and
   `presentation_entries_v2.provenance` three-wide (V2 rev 6, this plan's
-  amendments 1–2); TS enums narrowed per vertical everywhere.
+  amendment) while `acquisition_runs_v2.reason` stays two-wide — V4 widens
+  no reason enum (push provenance is this plan's own additive tail-migration
+  column, Appendix A); TS enums narrowed per vertical everywhere.
 - [ ] **Capability supersession chain frozen:** V1's boolean shape → V2's
   discriminated shape (§5.6) is the ONLY widening; V3 and V4 add no field;
   V1's exact-equality tests are superseded exactly once (V2 Task 5 Step 4a);
@@ -714,14 +743,16 @@ this plan's additions):
   by import everywhere (V2 rev 5 export pin).
 - [ ] **Lockstep amendments landed:** V1 rev 5 CHECK pin; V2 rev 5's three
   (verification-ready jobs table, broadened interim cleanup,
-  `source_aliases_v2` + writer); V2 rev 6's three (this plan); V3 §1.2's
+  `source_aliases_v2` + writer); V2 rev 6's provenance-CHECK amendment plus
+  its non-blocking `push_capability_json` shape pin (this plan); V3 §1.2's
   dated amendment; `policy_generation` owned by V2 (`ALTER TABLE`, V2
   Appendix A); `SourceSummary.push` deferred to V4 and narrowed to the
-  two-state union in every mention. Fix the V2 Appendix A stale pointer
-  ("validated only by Vertical 3" → 4).
+  two-state union in every mention. Verify BOTH V2 stale validation
+  pointers now read Vertical **4** — Appendix A ~L574 AND Task 4 Step 1b
+  ~L340 (fixed in V2 rev 6; push left V3 entirely).
 - [ ] **Declared supersessions are declared, not drift:** `updatedAtProvenance`
   + `legacy_unknown` (V4), `AttributionLevel` four-level (V3),
-  `ReconciliationClaim` union (V3), `AcquisitionReason` union (V4),
+  `ReconciliationClaim` union (V3),
   `establishFederation` actor-kind widening (V4), the capability shape (V2).
 - [ ] **No vertical leaks:** each plan's off-flag isolation asserts its own
   additions only; no plan tests another vertical's surface; push code appears
@@ -758,6 +789,8 @@ handle_reservations_v2(
  created_at TEXT NOT NULL)
 ALTER TABLE logical_activation_v2 ADD COLUMN converted_at TEXT
 ALTER TABLE logical_activation_v2 ADD COLUMN conversion_findings_json TEXT
+ALTER TABLE acquisition_runs_v2 ADD COLUMN delivery_mechanism TEXT
+                               -- 'push' when a ping created the run; NULL otherwise
 ```
 
 Notes. The push CASCADE is deliberate (V3 §5.2: purge deletes push state with
@@ -767,31 +800,12 @@ conversion marker extends V2's activation singleton instead of adding a table
 (spec §9 offered the choice; `converted_at IS NOT NULL` is marker-present,
 `conversion_findings_json` holds the per-kind counts). There is no findings
 relation and no run-claim table: the parse-time capability claim binds to
-`acquisition_runs_v2.push_capability_json` (V2 Appendix A, WP4). The
+`acquisition_runs_v2.push_capability_json` (V2 Appendix A, WP4). Push
+provenance is the nullable `delivery_mechanism` column — `'push'` when a
+ping created the run, NULL otherwise; `acquisition_runs_v2.reason` keeps
+V2's two values (spec §1.4 records the mechanism, not a new reason). The
 two-state `state` CHECK is the WP1 pin — deliberately narrower than nothing:
 migration-time expired/invalid facts are findings, never rows.
-
-## Appendix B: exact V1/V2/V3 integration points
-
-```text
-scheduler.ts poll pass          maybeRegister after each successful commit;
-                                 renewDue + purgeExpiredPushRows at pass end;
-                                 10× skip-if-recent for active-push sources (Task 2)
-server.ts pushInApi composition v2 branch supplies createLogicalPush handlers;
-                                 v1 handlers not routed under v2 (Task 3)
-store.ts claim/commit           AcquisitionReason push kinds through the same
-                                 claimAcquisition/commitAcquisition path (Task 3)
-sqlite.ts createLocalUser +     handle_reservations_v2 guard — one check where
-  updateUserProfile              all callers route (Task 5)
-runtime.ts pre-listen barrier   preflight + conversion + marker + reset extend
-                                 the ONE activation transaction; both tripwires (Task 8)
-logical-routes.ts               handle lookup gains the reserved shape; ops route (Tasks 8–9)
-web u/[handle] load             reserved → 308 /p/:publisherId; no post-purge branch (Task 8)
-```
-
-Fault-injection tests follow the V2 Appendix D pattern: throw immediately
-before marker, journal, and commit; assert the legacy tables and the v2
-tables are all unchanged.
 
 ## Appendix C: mandatory per-task commands and commits
 
@@ -844,33 +858,4 @@ expect(() => startCore({sourceModelV2: false, db: convertedDb}))
   .toThrow(/converted database requires RSC_SOURCE_MODEL_V2=on.*restore the pre-flip backup/)
 expect(() => startCore({sourceModelV2: true, db: activeButUnmarkedDb}))
   .toThrow(/activation active without conversion marker/)
-
-// core/test/migration-cutover.test.ts — lease continuity across cutover
-const ping = await v2App.request(`/websub/callback/${legacyToken}`, {
-  method: 'POST', headers: {'x-hub-signature': signWith(legacySecret, body)}, body})
-expect(ping.status).toBe(202)
-expect(count(raw, 'observation_versions_v2')).toBeGreaterThan(preCount) // ingested via the v2 path
-
-// core/test/logical-push-callbacks.test.ts — pause matrix (foundation §13 scenario)
-pause(source)
-const paused = await handleFatPing(token, validBody, validSig)
-expect(paused).toBe(202)                              // authenticated, neutral
-expect(count(raw, 'observation_versions_v2')).toBe(0) // neither parsed nor stored
-expect(await handleWebSubVerification(token, inFlightChallenge))
-  .toMatchObject({status: 200})                       // known challenge completes while paused
-
-// core/test/source-ops-api.test.ts — the token's whole surface is one route
-const ok = await v2App.request('/ops/sources/federation', {method: 'POST',
-  headers: {'content-type': 'application/json', authorization: `Bearer ${RSC_TOKEN}`},
-  body: JSON.stringify({url, attributionMode: 'aggregate', category: 'operator_policy',
-    note: 'configured peer', commandId: 'c1'})})
-expect(ok.status).toBe(200)
-expect(auditRow.actor_kind).toBe('operator_token')
-expect(auditRow.actor_id).toBe('ops:' + sha256hex(RSC_TOKEN).slice(0, 16))
-const admin = await v2App.request('/admin/sources', {headers: {authorization: `Bearer ${RSC_TOKEN}`}})
-expect(admin.status).toBe(401)                        // sessionAuth, core/src/api/auth.ts:64-66
 ```
-
-Every conversion fault test repeats the V2 Appendix D pattern with throws
-immediately before marker, journal reset, and commit, asserting legacy AND v2
-table families unchanged. Every HTTP test uses Hono `app.request`.
