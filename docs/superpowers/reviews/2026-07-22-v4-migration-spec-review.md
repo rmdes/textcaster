@@ -103,3 +103,57 @@ Fold as V4 rev 1 + the V3 §1.2/open-item-2 lockstep amendment in one commit.
 After this fold, all four verticals have dual-reviewed specs; remaining
 READY work is plans — V1 fold and V2 plan land with the other tab, then V3/V4
 plans follow the roadmap's sequential order.
+
+---
+
+# PLAN REVIEW (2026-07-23): V4 plan draft dual pass → V4 rev 2 + V2 rev 6 instructions
+
+Ponytail (PT1-5) + correctness (FC1-5), adjudicated. All five risky calls
+UPHELD (two-column marker with the inline dev-reset note; no-FK reservations
++ repo-layer guard as root-cause placement; push CASCADE self-justified;
+202-discard; token-only ops route — trim the over-strong spec citation).
+
+**FC1 (adjudicated — DROP amendment 1, take the additive path):** the
+2-value reason CHECK and NOT NULL run_id facts are true, but push provenance
+needs no enum widening: V4's own tail migration adds a nullable
+`delivery_mechanism` column on acquisition_runs_v2 ('push' when a ping
+created the run); thin pings reuse the existing one-shot reason per spec
+§1.4's own wording; `push_ping` was plan-invented — delete it. V2 stays
+untouched on this point and the refuse-execution coupling for it goes away.
+**FC2 (V4 fold — the real completeness gap):** Task 6 defines the synthetic
+observation-evidence contract explicitly: canonical_material /
+raw_evidence_json / normalized_json are BUILT from the converted post's
+fields, wrapped in a marked synthetic envelope (e.g. {"synthetic":
+"migration", ...}); state why integrity holds — reconciliation reads
+normalized_json (which IS the correct converted content) and verification
+fetches live publisher URLs (never re-reads stored evidence as authenticity
+proof); migration observations carry run_id='migration' (no FK engaged —
+verified) and wire_ordinal/seen counts get defined synthetic values.
+**FC3+PT1 (V4 fold + V2 rev 6):** amendment 3 reframed as a NON-BLOCKING
+shape pin (the defensive parser makes any shape forward-safe) — removed from
+the refuse-execution prerequisite set; its tail dedup per PT1 (defensive
+parse lives in Task 2 only; stale pointer lives in Task 12 only).
+**FC4 (V2 rev 6):** fix BOTH stale "validated by Vertical 3" pointers (V2
+Appendix A L574 AND Step 1b L340) → Vertical 4; add the shape comment beside
+the column while editing.
+**FC5 (V4 fold):** fix the url placeholder to match spec §6's binding block
+byte-for-byte (or drop the word "verbatim").
+**PT2 (V4 fold):** Task 10 Step 2 asserts composition only (seed → one
+pre-listen transaction → flip → SSR projects); field-level correctness stays
+in Tasks 5-8.
+**PT3 (V4 fold):** Appendix D keeps only the byte-exact push loop + the two
+tripwire matchers; the pause/lease/ops snippets go (task prose is
+unambiguous).
+**PT4 (V4 fold):** Appendix B table deleted; the fault-injection line moves
+to Task 8.
+
+V2 rev 6 = amendment 2 ONLY (presentation provenance CHECK gains
+legacy_unknown — verified genuinely un-widenable post-creation, no additive
+path, wire-widening already anticipated at V2 L451) + the two FC4 pointer
+fixes + the shape comment. Nothing else.
+
+Verified clean: all four callback routes + single injected pushInApi seam;
+ops-401-before-403; V1 fingerprint adopted verbatim; pending_review real;
+byte-exact push column map; synthetic run_id engages no FK; tripwires
+mutually exclusive and directionally exhaustive; TESTING/RUNNING commands
+exact; Task 12 gates landings not content.
