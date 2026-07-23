@@ -4,10 +4,21 @@
 
 **Goal:** Add a disabled v2 source registry and exercise source resolution, subscriptions, federation, and lifecycle management end to end without changing legacy ingestion or breaking the default-off web experience.
 
-**Revision:** 4 — adds exact pending mutation responses, subscription side
-effects on allow/approval, the spec-approved operator-token actor, deterministic
-public labels, explicit verification-source retention, and smaller mutation
-substeps.
+**Revision:** 5 — **status: reviewed-ready.** Folds the consolidated plan
+review `../reviews/2026-07-22-v1-source-control-plane-review.md` (HIGH 1–3:
+parallel non-sticky capability fetch with legacy fallback, the two omitted web
+test files, admin authz 401 for sessionless ops actors; IMPORTANT 4–6: pinned
+idempotency fingerprints, completed transition matrix, `jsonWrite` on every new
+v2 POST; MEDIUM 7–8, the minors, and the maintainer's DEFER-all decision on the
+~150 lines of forward surface) **as modified by the V4 §10 CHECK-vocabulary
+pin** (`../specs/2026-07-22-rsc-migration-cutover-design.md` §10 item 1, dated
+lockstep amendment in
+`../specs/2026-07-22-rsc-moderation-events-verification-design.md` §1.2): SQL
+CHECKs are created WIDE with the full foundation vocabulary while TS enums stay
+narrowed to V1's used subset. See "Rev 5 fold notes" below for each deferral's
+reintroduction pointer. Rev 4 added exact pending mutation responses,
+subscription side effects on allow/approval, deterministic public labels,
+verification-source retention, and smaller mutation substeps.
 
 **Architecture:** Add expand-only v2 tables behind a repository whose mutation
 commands each own one `BEGIN IMMEDIATE` transaction and one general command
@@ -32,6 +43,61 @@ SvelteKit/Svelte 5.
 - Stage explicit paths only. Every commit message ends with `developed with the help of AI tools`.
 - During implementation, use Docker verification when the stack is running; otherwise use the host commands from `AGENTS.md`.
 
+## Rev 5 fold notes — deferrals and the CHECK-vocabulary pin
+
+**Deferred forward surface** (review decision 2026-07-22: defer all of it;
+each item returns in the vertical that first writes it — these are the ONLY
+intentional mentions of the deferred names in this plan):
+
+- `source_aliases_v2` table (+ `SourceAlias` type, `listSourceAliases`,
+  `aliasCount`, alias-resolution branches, `GET /admin/sources/:id/aliases`) —
+  reintroduced in V2, whose redirect-identity handling is the first alias
+  writer.
+- `blocked_source_tombstones_v2` table (+ tombstone-resolution branches in
+  subscribe/federation) — reintroduced in V3; purge is the first writer
+  (V3 §5.1–5.2).
+- `policy_generation` column (+ `RemoteSource.policyGeneration`, its
+  transition increment, and its DTO/redaction-test references) — added by
+  V2's plan, whose fan-out first reads it (V2 §2.3/§3.7; V4 §10 item 2).
+  Verified safe: the ledger stores `result_json` opaquely, so old rows replay
+  their stored shape and V2 adds the field without a persisted-format break.
+- `SourceSummary.push` / `.health` / `.itemCount` / `.deliveryCount` — `push`
+  is first written in V4 (V4 §10 item 5, narrowed to the two-state union);
+  health and the counters arrive with V2 acquisition (V2 §6).
+- The `origin_verification` retention branch in last-subscription cleanup —
+  reintroduced in V3 with real retained verification evidence; V1 keeps the
+  provenance value in the enum and CHECK (no V1 writer creates it).
+- `POST /ops/sources/federation` — owned by V4, which adopts this plan's
+  former Task 7 Step 3 contract verbatim (V4 §6) when the legacy
+  `POST /users` token job retires. V1 ships no ops route; the TS-side
+  `operator_token` actor kind and `ops` ledger scope go with it.
+- `AuditCategory` values `migration_review` / `false_positive` / `remediated`
+  — removed from the TS enum only (no V1 emitter); V3 re-adds
+  `false_positive`/`remediated`, V4 `migration_review`.
+
+**CHECK-vocabulary pin (V4 §10 item 1; lockstep amendment 2026-07-22 in V3
+§1.2) — overrides the review's schema-side removals:** SQLite cannot widen a
+CHECK without a table rebuild, so the SQL CHECKs are created WIDE with the
+full foundation vocabulary — `source_audit_v2.category` keeps **all nine**
+audit categories, `source_audit_v2.actor_kind` keeps `operator_token`, and
+`command_ledger_v2.actor_scope` keeps `ops` — while the TS enums stay
+narrowed to each vertical's used subset (V1: six categories,
+`administrator | system`, no `ops` scope). Nothing ever widens
+`source_audit_v2` **after creation** because it is created wide.
+
+**Capability-shape widening site (V2 §5.6, review C5):** V2 deliberately
+supersedes `{sourceModelV2: boolean}` with a discriminated shape
+(`{sourceModelV2:false} | {sourceModelV2:true; model:'logical-v2';
+journalCursorVersion; streamProtocolVersion}`). This plan's exact-equality
+capability test (`toEqual({sourceModelV2:true})`, Task 7) is a **known
+widening site** that V2's plan updates — implement it as written here; do not
+pre-widen.
+
+**Deploy ordering (Finding 1):** `/capabilities` must be live on all core
+instances before the new web is promoted; web degrades to the legacy path on
+any capability-fetch failure and never below today's behavior (Task 8,
+Task 10 RUNNING.md note).
+
 ## Shared contracts
 
 Define these once in `core/src/domain/types.ts`; later tasks use the names
@@ -43,10 +109,11 @@ export type SourceOperation = 'enabled' | 'paused'
 export type SourceGovernance = 'allowed' | 'quarantined' | 'blocked'
 export type FederationStatus = 'pending' | 'approved'
 export type SourceSubscriptionState = 'active' | 'pending' | 'pending_review'
+// TS enum narrowed to V1's emitters; the SQL CHECK keeps all nine foundation
+// values (rev 5, V4 §10 pin). V3/V4 re-add the deferred members.
 export type AuditCategory =
   | 'spam' | 'abuse' | 'illegal_content' | 'compromised_source'
-  | 'migration_review' | 'operator_policy' | 'false_positive'
-  | 'remediated' | 'other'
+  | 'operator_policy' | 'other'
 
 export interface RemoteSource {
   id: string
@@ -54,7 +121,6 @@ export interface RemoteSource {
   attributionMode: AttributionMode
   operation: SourceOperation
   governance: SourceGovernance
-  policyGeneration: number
   provenance: 'user_subscription' | 'opml' | 'admin_federation' | 'origin_verification' | 'migration'
   provenanceNote: string | null
   adminRetained: boolean
@@ -75,7 +141,8 @@ export interface SourceSubscription {
   createdAt: string
 }
 export interface CommandEnvelope {
-  actorScope: 'owner' | 'administrator' | 'ops' | 'system'
+  // TS narrowed for V1; the SQL CHECK keeps 'ops' (rev 5, V4 §10 pin)
+  actorScope: 'owner' | 'administrator' | 'system'
   actorId: string
   commandId: string
   requestFingerprint: string
@@ -85,14 +152,14 @@ export interface SourceAuditEvent {
   sourceId: string
   commandId: string
   actorId: string | null
-  actorKind: 'administrator' | 'operator_token' | 'system'
+  // TS narrowed for V1; the SQL CHECK keeps 'operator_token' (rev 5, V4 §10 pin)
+  actorKind: 'administrator' | 'system'
   action: string
   category: AuditCategory | null
   note: string | null
   resultJson: string
   createdAt: string
 }
-export interface SourceAlias { url:string; sourceId:string; createdAt:string }
 export interface OwnerSourceFollow {
   sourceId: string
   url: string
@@ -122,13 +189,8 @@ export interface SourceSummary {
   source: RemoteSource
   federationStatus: 'none' | FederationStatus
   subscriptionCounts: { active: number; pending: number; pendingReview: number }
-  itemCount: number
-  deliveryCount: number
-  push: { mode: PushProtocol | null; state: 'pending' | 'active' | 'expired' | 'invalid' | null; endpointFingerprint: string | null }
-  health: { lastFetchAt: string | null; lastSuccessAt: string | null; lastFailure: string | null }
 }
 export interface SourceDetail extends SourceSummary {
-  aliasCount: number
   latestAudit: SourceAuditEvent | null
 }
 export type SourceTransitionResult =
@@ -137,9 +199,8 @@ export type SourceTransitionResult =
 ```
 
 Ordinary routes return only `OwnerSourceFollow` or `PublicFollowingEntry`.
-`RemoteSource`, provenance, governance, operation, policy generation, retention,
-audit, subscriber counts, push, and health are restricted to authenticated
-administrative routes.
+`RemoteSource`, provenance, governance, operation, retention, audit, and
+subscriber counts are restricted to authenticated administrative routes.
 
 `PublicSourceFollow.displayName` is deterministic presentation data, not stored
 source identity: use `new URL(canonicalUrl).hostname`; if URL construction fails
@@ -173,13 +234,12 @@ test('RSC_SOURCE_MODEL_V2 defaults off and accepts only on/off', () => {
 - [ ] **Step 2: Add the failing schema test**
 
 ```ts
-test('creates the seven v2 source-control tables', async () => {
+test('creates the five v2 source-control tables', async () => {
   const repo = await createSqliteRepository(':memory:')
   const rows = repo.raw.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{name:string}>
   expect(rows.map((r) => r.name)).toEqual(expect.arrayContaining([
-    'remote_sources_v2', 'source_aliases_v2', 'federation_relationships_v2',
+    'remote_sources_v2', 'federation_relationships_v2',
     'source_subscriptions_v2', 'source_audit_v2', 'command_ledger_v2',
-    'blocked_source_tombstones_v2',
   ]))
   repo.close()
 })
@@ -193,6 +253,18 @@ Expected: FAIL because the config field and tables are absent.
 
 - [ ] **Step 4: Add the field, Shared contracts, and one final migration**
 
+**Append the new entry at the END of the `MIGRATIONS` array** — mid-array
+insertion would renumber entries and corrupt `user_version` on populated
+databases.
+
+The SQL CHECKs below are deliberately WIDER than the V1 TS enums (rev 5, V4
+§10 pin; lockstep amendment in V3 §1.2): `source_audit_v2.category` carries
+all nine foundation categories while `AuditCategory` lists six; `actor_kind`
+carries `operator_token`; `command_ledger_v2.actor_scope` carries `ops`.
+SQLite cannot widen a CHECK without a table rebuild, so the vocabulary is
+pinned wide at creation; nothing ever widens these tables after creation
+because they are created wide.
+
 Use this exact SQL through the migration's existing `CREATE TABLE` string style:
 
 ```sql
@@ -201,13 +273,8 @@ CREATE TABLE remote_sources_v2 (
  attribution_mode TEXT NOT NULL CHECK(attribution_mode IN ('single_publisher','aggregate')),
  operation TEXT NOT NULL CHECK(operation IN ('enabled','paused')),
  governance TEXT NOT NULL CHECK(governance IN ('allowed','quarantined','blocked')),
- policy_generation INTEGER NOT NULL DEFAULT 0,
  provenance TEXT NOT NULL CHECK(provenance IN ('user_subscription','opml','admin_federation','origin_verification','migration')),
  provenance_note TEXT, admin_retained INTEGER NOT NULL DEFAULT 0 CHECK(admin_retained IN (0,1)),
- created_at TEXT NOT NULL
-);
-CREATE TABLE source_aliases_v2 (
- url TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES remote_sources_v2(id) ON DELETE CASCADE,
  created_at TEXT NOT NULL
 );
 CREATE TABLE federation_relationships_v2 (
@@ -234,11 +301,6 @@ CREATE TABLE command_ledger_v2 (
  actor_id TEXT NOT NULL, command_id TEXT NOT NULL, request_fingerprint TEXT NOT NULL,
  result_json TEXT NOT NULL, created_at TEXT NOT NULL,
  PRIMARY KEY(actor_scope,actor_id,command_id)
-);
-CREATE TABLE blocked_source_tombstones_v2 (
- id TEXT PRIMARY KEY, canonical_url TEXT NOT NULL UNIQUE,
- block_category TEXT NOT NULL, block_actor_id TEXT, block_note TEXT, blocked_at TEXT NOT NULL,
- purge_category TEXT NOT NULL, purge_actor_id TEXT, purge_note TEXT, purged_at TEXT NOT NULL
 );
 CREATE INDEX remote_sources_v2_page ON remote_sources_v2(created_at DESC,id DESC);
 CREATE INDEX source_subscriptions_v2_owner_state ON source_subscriptions_v2(owner_id,state,source_id);
@@ -278,7 +340,6 @@ export interface SourceRepository {
   getSource(id: string): Promise<RemoteSource | undefined>
   listSourceSummaries(cursor: {createdAt:string;id:string}|undefined, limit:number): Promise<Page<SourceSummary>>
   getSourceDetail(id: string): Promise<SourceDetail | undefined>
-  listSourceAliases(sourceId:string, cursor:{createdAt:string;url:string}|undefined, limit:number): Promise<Page<SourceAlias>>
   listSourceSubscriptions(sourceId:string, cursor:{createdAt:string;id:string}|undefined, limit:number): Promise<Page<SourceSubscription>>
   listSourceAudit(sourceId:string, cursor:{createdAt:string;id:string}|undefined, limit:number): Promise<Page<SourceAuditEvent>>
 }
@@ -300,22 +361,20 @@ test('ledger returns the original result and rejects changed reuse', async () =>
 
 - [ ] **Step 2: Test DTO mapping and stable pagination**
 
-Seed two sources and aliases/audit/subscriptions with equal timestamps. Assert
+Seed two sources plus audit/subscription rows with equal timestamps. Assert
 `listSourceSummaries(undefined, 1)` returns one row plus a cursor; the second
-page returns the other stable ID once. Assert `SourceDetail` has `aliasCount`
-and not an unbounded alias array. In this vertical `itemCount` and
-`deliveryCount` are `0`, while push/health fields are `null`; never derive them
-from legacy remote-user state.
+page returns the other stable ID once. `SourceSummary` carries only the
+source, federation status, and subscription counts (item/delivery counts,
+push, and health are deferred — rev 5); never derive summary fields from
+legacy remote-user state.
 
 ```ts
 const first = await repo.listSourceSummaries(undefined, 1)
 const second = await repo.listSourceSummaries(decodeCursor(first.nextCursor!), 1)
 expect(new Set([...first.items, ...second.items].map((x) => x.source.id)).size).toBe(2)
-expect(first.items[0]).toMatchObject({itemCount:0, deliveryCount:0,
-  push:{mode:null,state:null,endpointFingerprint:null},
-  health:{lastFetchAt:null,lastSuccessAt:null,lastFailure:null}})
-expect(await repo.getSourceDetail(first.items[0].source.id)).toMatchObject({aliasCount:1})
-expect(await repo.getSourceDetail(first.items[0].source.id)).not.toHaveProperty('aliases')
+expect(Object.keys(first.items[0]).sort()).toEqual(['federationStatus','source','subscriptionCounts'])
+expect((await repo.getSourceDetail(first.items[0].source.id))!.latestAudit)
+  .toMatchObject({id: newestSeededAudit.id}) // newest seeded audit row, not a list
 ```
 
 - [ ] **Step 3: Run red tests**
@@ -397,7 +456,7 @@ result and changed URL under the command ID conflicts.
 Assert a new URL creates `single_publisher + enabled + allowed + federation
 none + user_subscription`; paused retained sources are reused unchanged;
 quarantined creates an `awaiting_review` pending projection; aggregate,
-federation, blocked, and tombstoned targets return neutral results. Race two
+federation, and blocked targets return neutral results. Race two
 final-slot subscriptions and expect one source result and one `cap`.
 
 Inject the existing `checkCallbackUrl` guard and assert loopback, private,
@@ -431,6 +490,14 @@ followLocalAccount(input:{command:CommandEnvelope;ownerId:string;targetId:string
 resolveAndSubscribeSource(input:{command:CommandEnvelope;ownerId:string;canonicalUrl:string;cap:number;now:string}): Promise<SubscribeResult>
 ```
 
+`SourceService.subscribeByUrl` owns the raw-URL dispatch: it resolves
+canonical local-account feed URLs first (reusing the `localHandleForUrl`
+logic legacy runs inline at `core/src/api/app.ts:327`) and routes to
+`followLocalAccount`, otherwise normalizes/SSRF-checks and routes to
+`resolveAndSubscribeSource`. The `cap` argument is the SAME limit legacy
+enforces — `max_subs_per_user`, default 500 (`core/src/domain/service.ts:173`)
+— per design §4.
+
 Each command performs ledger check, resolution, cap check where applicable,
 writes, result storage, and commit in one `BEGIN IMMEDIATE`. Compute SHA-256
 fingerprints from `[operation, normalizedUrl]`; never include secrets. First add
@@ -438,7 +505,8 @@ the transaction wrapper and return stored results or conflict before resolving.
 
 - [ ] **Step 5: Implement resolution and mutation**
 
-Resolve local feed/source/alias/tombstone, set `created` from whether this
+Resolve local feed or existing source by canonical URL, set `created` from
+whether this
 command inserted the follow/subscription, serialize the result, and commit. An
 existing subscription reached with a different command ID returns
 `created:false`; an identical replay returns its originally stored value.
@@ -558,7 +626,10 @@ unsubscribe(ownerId:string, sourceId:string, commandId:string): Promise<{kind:'r
 
 Seed active, pending, and pending_review subscriptions. Assert owner JSON has
 only source ID, URL, attribution mode, subscription state, and neutral
-availability. Assert public JSON and OPML include only active subscriptions on
+availability. A `pending_review` subscription (e.g. from aggregate
+conversion) projects `availability:'awaiting_review'` regardless of source
+governance (rev 5, review minor — this cell was previously undefined).
+Assert public JSON and OPML include only active subscriptions on
 allowed sources and contain no governance, operation, provenance, note,
 generation, or retention keys.
 
@@ -569,7 +640,7 @@ expect(ownerView.sourceSubscriptions[0]).toEqual({
   attributionMode:'single_publisher', subscriptionState:'active', availability:'available',
 })
 const publicJson = JSON.stringify(await service.publicFollowing(owner.id))
-for (const key of ['governance','operation','provenance','provenanceNote','policyGeneration','adminRetained'])
+for (const key of ['governance','operation','provenance','provenanceNote','adminRetained'])
   expect(publicJson).not.toContain(key)
 expect(publicJson).not.toContain(pending.id)
 expect((await service.publicFollowing(owner.id)).find((x) => x.kind === 'source'))
@@ -579,16 +650,19 @@ expect((await service.publicFollowing(owner.id)).find((x) => x.kind === 'source'
 - [ ] **Step 2: Test cleanup matrix**
 
 Unsubscribe the final subscriber and assert an allowed self-service source is
-removed without a tombstone only when it has no federation relationship,
-`origin_verification` provenance, or admin-retention flag. Assert quarantined, blocked,
-federated, shared, and admin-retained sources survive. Retry the command and
-receive the original `{kind:'removed',sourceRemoved}` result from the ledger.
+removed outright only when it has no federation relationship and no
+admin-retention flag (the `origin_verification` retention branch is deferred
+to V3 — rev 5). Assert quarantined, blocked, federated, shared, and
+admin-retained sources survive. Retry the command and receive the original
+`{kind:'removed',sourceRemoved}` result from the ledger; reusing the command
+ID against a DIFFERENT source conflicts (rev 5, review Finding 4).
 
 ```ts
 const removed = await service.unsubscribe(owner.id, orphan.id, 'unsub-1')
 expect(removed).toEqual({kind:'removed',sourceRemoved:true})
 expect(await service.unsubscribe(owner.id, orphan.id, 'unsub-1')).toEqual(removed)
-for (const retained of [quarantined, blocked, federated, originVerificationSource, adminRetained])
+expect(await service.unsubscribe(owner.id, quarantined.id, 'unsub-1')).toEqual({kind:'conflict'})
+for (const retained of [quarantined, blocked, federated, adminRetained])
   expect((await service.unsubscribe(owner.id, retained.id, `unsub-${retained.id}`))).toEqual({kind:'removed',sourceRemoved:false})
 ```
 
@@ -606,12 +680,14 @@ source display name from normalized hostname, falling back to canonical URL.
 - [ ] **Step 5: Implement cleanup transaction**
 
 Add ledger check, delete the subscription, evaluate retention, store the result,
-and commit as explicit sequential substeps in one `BEGIN IMMEDIATE`. In Vertical
-1, `provenance = 'origin_verification'` is the temporary verification-role
-retention condition because evidence relations do not exist yet. Vertical 3
-replaces/extends that check with actual retained verification-evidence
-references. Vertical 2 extends the same command with shared-item/structural-
-tombstone handling when v2 items exist.
+and commit as explicit sequential substeps in one `BEGIN IMMEDIATE`. The
+`unsubscribe` request fingerprint is `["unsubscribe", sourceId, actorId]`
+(rev 5, review Finding 4 — the `[command, resource, actor]` pattern later
+verticals pin, V2 §6.2). Retention in V1 evaluates only federation
+relationship and the admin-retention flag; the verification-evidence
+retention branch arrives in Vertical 3 with its first real evidence writer
+(rev 5 deferral). Vertical 2 extends the same command with
+shared-item/structural-tombstone handling when v2 items exist.
 
 - [ ] **Step 6: Run green tests and commit**
 
@@ -641,7 +717,7 @@ developed with the help of AI tools"
 matrix. No HTTP routes yet.
 
 ```ts
-establishFederation(input:{url:string;attributionMode:AttributionMode;category:AuditCategory;note:string|null;commandId:string;actorId:string;actorKind:'administrator'|'operator_token'}): Promise<{kind:'established';source:RemoteSource;federation:FederationRelationship}|{kind:'exists'|'unavailable'|'conflict'}>
+establishFederation(input:{url:string;attributionMode:AttributionMode;category:AuditCategory;note:string|null;commandId:string;actorId:string;actorKind:'administrator'}): Promise<{kind:'established';source:RemoteSource;federation:FederationRelationship}|{kind:'exists'|'unavailable'|'conflict'}>
 transition(input:{sourceId:string;action:'pause'|'resume'|'quarantine'|'allow'|'approve'|'reject'|'revoke'|'block'|'unblock'|'set_attribution_mode';category:AuditCategory|null;note:string|null;attributionMode?:AttributionMode;commandId:string;actorId:string;actorKind:'administrator'|'system'}): Promise<SourceTransitionResult>
 ```
 
@@ -650,9 +726,13 @@ transition(input:{sourceId:string;action:'pause'|'resume'|'quarantine'|'allow'|'
 For a new URL, assert administrator-selected mode plus enabled/allowed/approved.
 For a retained allowed source, assert its mode and operation are unchanged and
 an approved relationship is added. For retained quarantined, assert approval
-sets allowed; for blocked/tombstoned, assert unavailable. Every success requires
+sets allowed; for blocked, assert unavailable. Every success requires
 an `AuditCategory`, writes one audit/ledger row, and identical retry returns the
-stored result. Concurrent different commands converge to one relationship.
+stored result; reusing the command ID with a changed URL or mode conflicts
+(rev 5, review Finding 4). Concurrent different commands converge to one
+relationship. The `establishFederation` request fingerprint is
+`["federation", normalizedUrl, attributionMode]` (pinned; V4 §6 adopts it
+verbatim for the deferred ops route).
 
 ```ts
 const established = await service.establishFederation({url:retained.canonicalUrl,
@@ -678,16 +758,35 @@ const success = [
   ['quarantine', 'allowed', 'quarantined'], ['allow', 'quarantined', 'allowed'],
   ['approve', 'pending', 'approved'], ['reject', 'pending', 'none'],
   ['revoke', 'approved', 'none'], ['block', 'allowed', 'blocked'],
-  ['unblock', 'blocked', 'quarantined'],
+  ['block', 'quarantined', 'blocked'], ['unblock', 'blocked', 'quarantined'],
 ] as const
 ```
+
+The matrix is complete (rev 5, review Finding 5 — previously undefined cells
+are now explicit):
+
+- **permit** `block` from `quarantined` (design §5: block applies regardless
+  of operation and is not restricted to `allowed` — the moderation-escalation
+  path above);
+- **conflict** on `quarantine` and `allow` from `blocked` (design: the only
+  source-governance exits from blocked are explicit unblock or purge);
+- `reject`/`revoke` when federation is `none` → `{kind:'conflict'}` (no
+  relationship to act on);
+- **permit** `pause`/`resume` while `blocked` (the operation axis is
+  independent; governance is unchanged — consistent with reject/revoke
+  succeeding while blocked).
 
 Also assert `set_attribution_mode` requires `attributionMode` and moves active
 and pending subscriptions to pending_review when changing to aggregate;
 reject/revoke succeed while blocked; approve while blocked and allow directly
 from blocked conflict. Governance/federation/block/unblock/mode actions require
-an enum category; pause/resume allow null. Each successful mutation increments
-policy generation once and writes one audit/ledger record.
+an enum category; pause/resume allow null. Each successful mutation writes one
+audit/ledger record (`policy_generation` is deferred to V2's plan — rev 5).
+The `transition` request fingerprint is
+`[action, sourceId, actorId, attributionMode ?? '']` (rev 5, review Finding 4
+— the `[command, resource, actor]` pattern plus the one payload field that
+changes semantics); assert a reused command ID with a changed action or mode
+returns `{kind:'conflict'}`.
 
 For both `allow` and `approve`, seed a single-publisher source with pending and
 pending_review subscriptions; assert pending becomes active atomically when the
@@ -701,7 +800,7 @@ Expected: FAIL because commands are absent.
 
 - [ ] **Step 4: Implement federation ledger entry and source resolution**
 
-Federation establishment resolves canonical URL/aliases/tombstones, creates or
+Federation establishment resolves the canonical URL, creates or
 reuses the source, and returns replay/conflict before mutation.
 
 - [ ] **Step 5: Implement federation mutation and subscription effects**
@@ -735,7 +834,7 @@ developed with the help of AI tools"
 
 ---
 
-### Task 7: Core capability, ordinary, admin, and ops APIs
+### Task 7: Core capability, ordinary, and admin APIs
 
 **Files:**
 - Modify: `core/src/api/app.ts`
@@ -743,10 +842,12 @@ developed with the help of AI tools"
 - Create: `core/test/source-capability-api.test.ts`
 - Modify: `core/test/subscriptions-api.test.ts`
 - Create: `core/test/source-admin-api.test.ts`
-- Create: `core/test/source-ops-api.test.ts`
 
 **Interfaces:** Produces an always-available capability endpoint and v2-only
 ordinary/admin routes. The off branch leaves every legacy route unchanged.
+`POST /ops/sources/federation` is NOT built here — it is deferred to V4,
+which adopts this plan's former ops contract verbatim (V4 §6) when the legacy
+`POST /users` token job retires (rev 5 deferral).
 
 - [ ] **Step 1: Test capability and off/on route behavior**
 
@@ -757,6 +858,12 @@ expect((await appOff.request('/admin/feeds', admin)).status).toBe(200)
 expect((await appOff.request('/admin/sources', admin)).status).toBe(404)
 expect((await appOn.request('/admin/sources', admin)).status).toBe(200)
 ```
+
+The two `toEqual` capability assertions are a known widening site: V2 §5.6
+supersedes the enabled shape with a discriminated union carrying `model`,
+`journalCursorVersion`, and `streamProtocolVersion`, and V2's plan updates
+these exact-equality tests then (review C5). Implement them as written here;
+do not pre-widen.
 
 Repeat for legacy following/subscribe/OPML routes off and v2 owner/public routes
 on. Assert active subscribe JSON contains `OwnerSourceFollow`, never
@@ -776,15 +883,23 @@ expect(await postSubscription(appOn, quarantinedUrl, 'pending-2')).toEqual({
 
 - [ ] **Step 2: Test admin authorization/redaction matrix**
 
-Use actors unauthenticated, anonymous, registered, admin, valid ops, invalid
-ops. Admin list/detail/aliases/subscribers/audit/mutations succeed; every other
-actor fails. Assert serialized success/error bodies contain none of seeded
-secret, callback token, auth header, or raw ops token.
+Use actors unauthenticated, anonymous, registered, admin, valid bearer token,
+invalid bearer token. Admin list/detail/subscribers/audit/mutations succeed
+for the admin; every other actor fails. The two bearer-token columns are
+**401, not 403** (rev 5, review Finding 3): a request carrying only
+`Authorization: Bearer <RSC_TOKEN>` has no better-auth session, so the house
+`sessionAuth` middleware returns
+`c.json({error:'authentication required'}, 401)`
+(`core/src/api/auth.ts:64-66`) before `requireAdmin`'s 403 is ever reached.
+The token grants no administrative read (design §11); its whole authorized
+surface is the V4-deferred ops route. Assert serialized success/error bodies
+contain none of seeded secret, callback token, auth header, or the raw
+`RSC_TOKEN`.
 
 ```ts
 const expected = {
-  list:[401,403,403,200,403,403], detail:[401,403,403,200,403,403],
-  audit:[401,403,403,200,403,403], mutate:[401,403,403,200,403,403],
+  list:[401,403,403,200,401,401], detail:[401,403,403,200,401,401],
+  audit:[401,403,403,200,401,401], mutate:[401,403,403,200,401,401],
 } as const
 for (const [route, statuses] of Object.entries(expected))
   expect(await statusesFor(route, actors)).toEqual(statuses)
@@ -792,27 +907,13 @@ for (const body of await allBodies())
   for (const secret of [callbackToken,pushSecret,authorizationHeader,opsToken]) expect(body).not.toContain(secret)
 ```
 
-- [ ] **Step 3: Test exact ops compatibility route**
+- [ ] **Step 3: Run red API tests**
 
-`POST /ops/sources/federation` authenticates `Authorization: Bearer <RSC_TOKEN>`
-and accepts:
-
-```json
-{"url":"https://example.test/feed","attributionMode":"aggregate","category":"operator_policy","note":"configured peer","commandId":"uuid"}
-```
-
-It calls `establishFederation` only. Derive audit actor ID as
-`ops:<first 16 hex chars of SHA-256(RSC_TOKEN)>`; never store/return the token.
-Record `actorKind:'operator_token'` as authorized by spec revision 3.
-No ops token can read admin collections or call lifecycle/moderation/purge.
-
-- [ ] **Step 4: Run red API tests**
-
-Run: `npm test -w core -- source-capability-api subscriptions-api source-admin-api source-ops-api`
+Run: `npm test -w core -- source-capability-api subscriptions-api source-admin-api`
 
 Expected: FAIL because route branches are absent.
 
-- [ ] **Step 5: Implement capability and ordinary endpoints**
+- [ ] **Step 4: Implement capability and ordinary endpoints**
 
 Always serve `GET /capabilities`. Add the ordinary routes and exact response
 projection/status rules while v2 is on:
@@ -826,32 +927,47 @@ projection/status rules while v2 is on:
 | `GET /users/:handle/follows` | `PublicFollowingEntry[]` |
 | `GET /users/:handle/following.opml` | active/allowed entries only |
 
-Unavailable/not-subscribable are the same neutral 409; cap is 429; changed
-command reuse is 409. `:action=attribution-mode` rejects a missing
+Non-success statuses (rev 5, review minor — previously undefined rows):
+unavailable/not-subscribable are the same neutral 409 body; cap is 429;
+`{kind:'unknown'}` from transition or unsubscribe is 404; changed command
+reuse is 409 `{error:'idempotency conflict'}`, and an illegal transition is
+409 `{error:'invalid transition'}` — the two 409 bodies are distinct.
+Route action segments use hyphens: `:action=attribution-mode` maps to domain
+action `set_attribution_mode`; every other segment equals its domain action
+verbatim (rev 5, review minor). `attribution-mode` rejects a missing
 `attributionMode`. While off, do not register v2 routes and preserve legacy
-behavior.
+behavior. While ON, v2 shares the `POST /me/subscriptions` /
+`GET /me/following` paths with legacy — Hono first-match wins, so verify v2
+registration actually supersedes the legacy handlers when the flag is on.
 
-- [ ] **Step 6: Implement administrative and ops endpoints**
+**Every new v2 POST composes the house `jsonWrite` guard positionally**
+(rev 5, review Finding 6): reuse
+`jsonWrite = bodyLimit({ maxSize: MAX_JSON_BYTES, onError: rejectOversized })`
+at `core/src/api/app.ts:65` (`MAX_JSON_BYTES = 512 * 1024` at `:63`) exactly
+as every existing authed JSON write does — do not reinvent it.
+
+- [ ] **Step 5: Implement administrative endpoints**
 
 | Endpoint | Result |
 |---|---|
 | `GET /admin/sources`, `GET /admin/sources/:id` | paginated summary/detail |
-| `GET /admin/sources/:id/{aliases,subscriptions,audit}` | paginated subresource |
+| `GET /admin/sources/:id/{subscriptions,audit}` | paginated subresource |
 | `POST /admin/sources` | `{url,attributionMode,category,note,commandId}` |
 | `POST /admin/sources/:id/:action` | `{category,note,commandId,attributionMode?}` |
-| `POST /ops/sources/federation` | exact ops contract from Step 3 |
 
-Wire the authorization matrix and hand validators separately from the ordinary
+Both admin POSTs compose `jsonWrite` (Step 4 note). Reuse the house
+`app.use('/admin/*', authed, requireAdmin())` composition. Wire the
+authorization matrix and hand validators separately from the ordinary
 route branch.
 
-- [ ] **Step 7: Run green API tests and commit**
+- [ ] **Step 6: Run green API tests and commit**
 
-Run: `npm test -w core -- source-capability-api subscriptions-api source-admin-api source-ops-api && npm test -w core && npm run typecheck -w core`
+Run: `npm test -w core -- source-capability-api subscriptions-api source-admin-api && npm test -w core && npm run typecheck -w core`
 
 Expected: PASS and exit 0.
 
 ```bash
-git add core/src/api/app.ts core/src/server.ts core/test/source-capability-api.test.ts core/test/subscriptions-api.test.ts core/test/source-admin-api.test.ts core/test/source-ops-api.test.ts
+git add core/src/api/app.ts core/src/server.ts core/test/source-capability-api.test.ts core/test/subscriptions-api.test.ts core/test/source-admin-api.test.ts
 git commit -m "core: expose gated v2 source APIs
 
 developed with the help of AI tools"
@@ -866,13 +982,22 @@ developed with the help of AI tools"
 - Modify: `web/src/lib/types.ts`
 - Modify: `web/src/routes/+page.server.ts`
 - Modify: `web/src/routes/+page.svelte`
+- Modify: `web/src/routes/page.load.test.ts`
+- Modify: `web/src/routes/page.actions.test.ts`
 - Modify: `web/src/routes/u/[handle]/following/+page.server.ts`
 - Modify: `web/src/routes/u/[handle]/following/+page.svelte`
 - Modify: `web/src/routes/u/[handle]/following/following.actions.test.ts`
 - Modify: `web/src/lib/api.test.ts`
 
 **Interfaces:** Adds `getCapabilities(fetch)` and selects existing v1 or new v2
-API wrappers per request.
+API wrappers per request. **Failure semantics (rev 5, review Findings 1+8):**
+the capability fetch runs in PARALLEL with the existing legacy call, never
+serially ahead of it; a capability-fetch failure (non-200 or throw) degrades
+to the LEGACY path for that request — legacy is exactly what OFF is — never
+to `coreDown`; only a successful reading is memoized for the web-process
+lifetime, a failure is never cached as sticky state and is retried on the
+next request. **Deploy ordering:** `/capabilities` must be live on all core
+instances before this web change is promoted (core before web).
 
 - [ ] **Step 1: Test all changed ordinary pages/actions off and on**
 
@@ -880,19 +1005,30 @@ With `{sourceModelV2:false}`, assert home subscribe and following load/actions
 call the existing legacy endpoints and render the existing user/feed rows. With
 `true`, assert they call v2 owner/public endpoints, show active/pending neutral
 states to the owner, hide pending from visitors, and unsubscribe by stable
-source ID. Assert a capability fetch failure returns the existing core-down
-state and performs no mutation; only an explicit `false` selects v1.
+source ID. Assert a capability fetch failure falls back to the legacy path for
+that request (rev 5 — NOT `coreDown`; `coreDown` remains reserved for the
+legacy call itself failing, exactly as today) and is not memoized: the next
+request fetches `/capabilities` again.
 
 ```ts
 expect(await loadFollowingWith({sourceModelV2:false})).toMatchObject({api:'legacy'})
 expect(await loadFollowingWith({sourceModelV2:true})).toMatchObject({api:'v2'})
-expect(await loadFollowingWith('capability-error')).toMatchObject({coreDown:true})
-expect(callsFor('capability-error')).not.toContain('/me/subscriptions')
+expect(await loadFollowingWith('capability-error')).toMatchObject({api:'legacy'})
+expect(capabilityFetchCountAfter('capability-error', 2)).toBe(2) // failure never cached
 ```
+
+The OFF path must be byte-identical to today, not merely branch-labelled
+legacy (rev 5, review Finding 2): the pre-existing assertions in
+`page.load.test.ts` (first fetch is the timeline call — `calls[0]` contains
+`before=`; exact `coreDown` object shape) and `page.actions.test.ts` (429 on
+every fetch still surfaces the cap error) must pass **unmodified** — with the
+parallel fetch and legacy fallback they do, which is the cleanest proof that
+OFF is zero-diff. Extend both files with the on/failure cases; do not weaken
+their existing assertions.
 
 - [ ] **Step 2: Run red web tests**
 
-Run: `npm test -w web -- api page.load following.actions`
+Run: `npm test -w web -- api page.load page.actions following.actions`
 
 Expected: FAIL in capability/v2 cases; existing off assertions remain green.
 
@@ -902,9 +1038,16 @@ Expected: FAIL in capability/v2 cases; existing off assertions remain green.
 export async function getCapabilities(f:typeof fetch): Promise<{sourceModelV2:boolean}>
 ```
 
-Fetch once per changed server load/action. Explicit off uses current code paths
-unchanged; failure returns core-down/no mutation; on uses owner/public
-projections.
+(V2 §5.6 later widens this return type to the discriminated shape — known
+supersession, review C5; implement the boolean shape here.)
+
+Fire the capability fetch in parallel with the existing legacy call
+(`Promise.all`), never serially ahead of it. Memoize ONLY a successful (200)
+reading for the web-process lifetime — the value is process-immutable on
+core, so one call per pod lifetime suffices (Finding 8); a non-200 or thrown
+fetch is never memoized. Explicit off and capability failure both use the
+current code paths unchanged (the already-in-flight legacy result); on uses
+owner/public projections.
 
 - [ ] **Step 4: Implement ordinary loaders, actions, and markup**
 
@@ -914,12 +1057,13 @@ management; do not render governance, operation, provenance, or retention state.
 
 - [ ] **Step 5: Run green web tests and commit**
 
-Run: `npm test -w web -- api page.load following.actions && npm run check -w web`
+Run: `npm test -w web -- api page.load page.actions following.actions && npm run check -w web`
 
-Expected: PASS and exit 0.
+Expected: PASS and exit 0, with the pre-existing `page.load.test.ts` /
+`page.actions.test.ts` OFF assertions unmodified.
 
 ```bash
-git add web/src/lib/api.ts web/src/lib/types.ts web/src/routes/+page.server.ts web/src/routes/+page.svelte 'web/src/routes/u/[handle]/following/+page.server.ts' 'web/src/routes/u/[handle]/following/+page.svelte' 'web/src/routes/u/[handle]/following/following.actions.test.ts' web/src/lib/api.test.ts
+git add web/src/lib/api.ts web/src/lib/types.ts web/src/routes/+page.server.ts web/src/routes/+page.svelte web/src/routes/page.load.test.ts web/src/routes/page.actions.test.ts 'web/src/routes/u/[handle]/following/+page.server.ts' 'web/src/routes/u/[handle]/following/+page.svelte' 'web/src/routes/u/[handle]/following/following.actions.test.ts' web/src/lib/api.test.ts
 git commit -m "web: branch source subscriptions by capability
 
 developed with the help of AI tools"
@@ -945,6 +1089,12 @@ quarantine/pending, allowed user, and blocked sources; forms post stable source
 ID, enum category, optional note, command ID, and attribution mode where needed.
 Test each action in both modes and assert no v2 request occurs off.
 
+Add a capability-error case (rev 5, review Finding 7): a capability-fetch
+failure degrades to the legacy admin load (same carve as Task 8), so a
+genuine core outage still surfaces as today's throw-to-error-page. The admin
+load must never swallow a capability failure into `feeds: []` — a
+silently-empty admin page is worse than an error page.
+
 ```ts
 expect(await loadAdminWith({sourceModelV2:false})).toMatchObject({mode:'legacy'})
 expect(calls()).toContain('/admin/feeds')
@@ -952,6 +1102,9 @@ expect(calls()).not.toContain('/admin/sources')
 resetCalls()
 expect(await loadAdminWith({sourceModelV2:true})).toMatchObject({mode:'v2'})
 expect(calls()).toContain('/admin/sources')
+resetCalls()
+expect(await loadAdminWith('capability-error')).toMatchObject({mode:'legacy'})
+await expect(loadAdminWith('capability-error-and-core-down')).rejects.toThrow() // today's error page, never feeds:[]
 ```
 
 - [ ] **Step 2: Run red test**
@@ -968,7 +1121,9 @@ source groups; off, return the current legacy view model unchanged.
 - [ ] **Step 4: Implement admin actions and markup branches**
 
 On, render explicit no-JS forms and stable-ID actions; off, retain current
-markup/actions. Follow the 42rem editorial layout and tokenized colors. Do not
+markup/actions. Block and unblock confirmations must state their distinct
+consequences (design §10 — rev 5, review minor), not merely confirm. Follow
+the 42rem editorial layout and tokenized colors. Do not
 add item/delivery evidence UI.
 
 - [ ] **Step 5: Run full web gate and commit**
@@ -1012,7 +1167,7 @@ expect((await appOff.request('/admin/sources', adminRequest)).status).toBe(404)
 const flow = await runV2ControlPlaneFlow(appOn, webOn)
 expect(flow.auditActions).toEqual(['quarantine','allow','pause','resume','federation_establish'])
 for (const body of flow.ordinaryBodies)
-  for (const key of ['governance','operation','provenanceNote','policyGeneration','adminRetained']) expect(body).not.toContain(key)
+  for (const key of ['governance','operation','provenanceNote','adminRetained']) expect(body).not.toContain(key)
 ```
 
 - [ ] **Step 2: Run integration tests red**
@@ -1026,7 +1181,10 @@ Expected: FAIL until all wiring is complete.
 Add `RSC_SOURCE_MODEL_V2=off` to both env examples. State in RUNNING.md that
 `on` is development-only, uses empty v2 tables, does not mirror legacy writes,
 and web discovers the state through `/capabilities` rather than an independent
-environment variable.
+environment variable. Add the deploy-ordering rule (rev 5, review Finding 1):
+deploy core (with `/capabilities`) to ALL instances before promoting the new
+web; if web cannot reach `/capabilities` it degrades to the legacy path for
+that request — never below today's behavior — and retries next request.
 
 - [ ] **Step 4: Run the complete vertical gate**
 
